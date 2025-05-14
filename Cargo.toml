@@ -1,0 +1,23 @@
+[package]
+name = "hord3_test_game"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+hord3 = {git = "https://github.com/Pedro-W21/hord3.git"}
+entity_derive = { git = "https://github.com/Pedro-W21/hord3.git"}
+engine_derive = { git = "https://github.com/Pedro-W21/hord3.git" }
+task_derive = { git = "https://github.com/Pedro-W21/hord3.git" }
+to_from_bytes = { git = "https://github.com/Pedro-W21/hord3.git" }
+to_from_bytes_derive = { git = "https://github.com/Pedro-W21/hord3.git" }
+
+cosmic-text = "0.12.1"
+crossbeam = "0.8.4"
+noise = "0.7.0"
+fastrand = "2.1.1"
+
+[profile.release]
+codegen-units = 1
+opt-level = 3
+debug = true
+target = "native"
