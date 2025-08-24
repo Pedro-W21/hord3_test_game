@@ -470,7 +470,7 @@ impl TileEditorData {
             cam,
             mouse_state,
             tile_chunks:HashSet::with_capacity(128),
-            tools:HashMap::from([("LightSpreader".to_string(), TileEditingTool::MakeLight { strength: 255, color: (255,255,255) }),("TerrainModifier".to_string(), TileEditingTool::PlaceAndDestroy { chosen: 0, empty_voxel: 1 }), ("TileChooser".to_string(), TileEditingTool::ChooseTileChunks), ("TerrainZoneModifier".to_string(), TileEditingTool::ZonedPlaceAndDestroy { chosen: 0, empty_voxel: 1, start: Vec3D::zero(), end: Vec3D::zero(), action:None })]),
+            tools:HashMap::from([("LightSpreader".to_string(), TileEditingTool::MakeLight { strength: 255, color: (255,255,255) }),("TerrainModifier".to_string(), TileEditingTool::PlaceAndDestroy { chosen: 0, empty_voxel: 0 }), ("TileChooser".to_string(), TileEditingTool::ChooseTileChunks), ("TerrainZoneModifier".to_string(), TileEditingTool::ZonedPlaceAndDestroy { chosen: 0, empty_voxel: 0, start: Vec3D::zero(), end: Vec3D::zero(), action:None })]),
             chosen_tool: "TerrainModifier".to_string(),
             ui,
             action_queue:VecDeque::with_capacity(128)
