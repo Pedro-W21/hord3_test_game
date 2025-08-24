@@ -3,7 +3,7 @@ use std::{path::PathBuf, sync::{atomic::AtomicUsize, Arc, RwLock}};
 use engine_derive::GameEngine;
 use hord3::{defaults::default_rendering::vectorinator_binned::{rendering_spaces::ViewportData, shaders::NoOpShader, Vectorinator}, horde::{game_engine::{engine::{GameEngine, MovingObjectID}, entity::{Entity, EntityVec, MultiplayerEntity, Renderable}, multiplayer::Identify, world::{WorldComputeHandler, WorldHandler, WorldOutHandler, WorldWriteHandler}}, geometry::vec3d::{Vec3D, Vec3Df}, rendering::camera::Camera, scheduler::IndividualTask, sound::{ARWWaves, WavesHandler}}};
 
-use crate::{colliders::AABB, cutscene::{game_shader::GameShader, reverse_camera_coords::reverse_from_raster_to_worldpos}, game_entity::{ColliderEvent, ColliderEventVariant, GameEntity, GameEntityVecRead, GameEntityVecWrite, MovementEvent, MovementEventVariant}, game_map::{get_voxel_pos, GameMap, GameMapEvent, Voxel, VoxelLight, VoxelModel, VoxelType}};
+use crate::{colliders::AABB, cutscene::{game_shader::GameShader, reverse_camera_coords::reverse_from_raster_to_worldpos}, game_entity::{Collider, ColliderEvent, ColliderEventVariant, GameEntity, GameEntityVecRead, GameEntityVecWrite, MovementEvent, MovementEventVariant}, game_map::{get_voxel_pos, GameMap, GameMapEvent, Voxel, VoxelLight, VoxelModel, VoxelType}};
 
 
 #[derive(Clone)]
@@ -238,11 +238,93 @@ fn compute_tick<'a>(turn:EntityTurn, id:usize, first_ent:&GameEntityVecRead<'a, 
     }
 }
 
+fn get_nudge_to_nearest_next_whole(number:f32, delta_to_add:f32) -> f32 {
+    if number.is_sign_positive() {
+        let fract = number.fract();
+        let nudge = if fract >= 0.5 {
+            1.0 - fract + delta_to_add
+        }
+        else {
+            -fract - delta_to_add
+        };
+        nudge
+    }
+    else {
+        let fract = number.fract();
+        let nudge = if fract <= -0.5 {
+            -1.0 - fract - delta_to_add
+        }
+        else {
+            -fract + delta_to_add
+        };
+        nudge
+    }
+}
+
+fn compute_nudges_from(vertex:Vec3Df, spd:Vec3Df, collider:&Collider, world:&WorldComputeHandler<GameMap<CoolVoxel>, CoolGameEngineTID>) -> (Vec3Df, bool) {
+    let mut touching_ground = false;
+    let mut nudges = Vec3Df::all_ones();
+    let voxel = match world.world.get_voxel_at(get_voxel_pos(vertex)) {
+        Some(voxel) => voxel.clone(),
+        None => {CoolVoxel::new(0, 0, VoxelLight::zero_light(),None)}
+    };
+    if !world.world.get_voxel_types()[voxel.voxel_type as usize].is_completely_empty() {    
+        let z_nudge = get_nudge_to_nearest_next_whole(vertex.z, 0.01);
+        let z_nudged_collider = (collider.collider + spd + Vec3Df::new(0.0, 0.0, z_nudge));
+        if z_nudged_collider.collision_world(&world.world) {
+            let x_nudge = get_nudge_to_nearest_next_whole(vertex.x, 0.01);
+            let y_nudge = get_nudge_to_nearest_next_whole(vertex.y, 0.01);
+            let mut one_worked = true;
+            if x_nudge.abs() < y_nudge.abs() {
+                let x_nudged_collider = (collider.collider + spd + Vec3Df::new(x_nudge, 0.0, 0.0));
+                if x_nudged_collider.collision_world(&world.world) {
+                    one_worked = false;
+                }
+                else {
+                    nudges.x = x_nudge;
+                    nudges.z = 0.0;
+                    nudges.y = 0.0;
+                }
+            }
+            else {
+                let y_nudged_collider = (collider.collider + spd + Vec3Df::new(0.0, y_nudge, 0.0));
+                if y_nudged_collider.collision_world(&world.world) {
+                    one_worked = false;
+                }
+                else {
+                    nudges.y = y_nudge;
+                    nudges.x = 0.0;
+                    nudges.z = 0.0;
+                }
+            }
+            if !one_worked {
+                let xy_nudged_collider = (collider.collider + spd + Vec3Df::new(x_nudge, y_nudge, 0.0));
+                if xy_nudged_collider.collision_world(&world.world) {
+                    nudges.x = x_nudge;
+                    nudges.y = y_nudge;
+                    nudges.z = z_nudge;
+                }
+                else {
+                    nudges.x = x_nudge;
+                    nudges.y = y_nudge;
+                    nudges.z = 0.0
+                }
+            }
+        }
+        else {
+            touching_ground = true;
+            nudges.z = z_nudge;
+            nudges.x = 0.0;
+            nudges.y = 0.0;
+        }   
+    }
+    (nudges, touching_ground)
+}
+
+
 fn after_main_tick<'a>(turn:EntityTurn, id:usize, first_ent:&GameEntityVecRead<'a, CoolGameEngineTID>, second_ent:&GameEntityVecRead<'a, CoolGameEngineTID>, world:&WorldComputeHandler<GameMap<CoolVoxel>, CoolGameEngineTID>, extra_data:&ExtraData) {
     match turn {
         EntityTurn::entity_1 => {
-            
-
             let movement = &first_ent.movement[id];
             let collider = &first_ent.collider[id];
             let static_type = &first_ent.static_types[first_ent.stats[id].static_type_id];
@@ -250,53 +332,41 @@ fn after_main_tick<'a>(turn:EntityTurn, id:usize, first_ent:&GameEntityVecRead<'
             //let mut movement_add = Vec3D::zero();
             let mut spd = movement.speed;
             spd *= AIR_RESISTANCE;
+            spd.z -= GRAVITY;
+            if spd.z.abs() > 0.45 {
+                spd.z = 0.45 * spd.z.signum()
+            }
             let mut touching_ground = false;
-            match get_push_to_next_integer_coords_in_dir_with_world(movement_pos + spd + DOWN_DIR, DOWN_DIR, world) {
-                Some(push) => {
-                    spd.z = spd.z.clamp(-0.5, 0.5);
-                    touching_ground = true;
-                    movement_pos += push;
-                },
-                None => ()
-            }
-            for dir in OTHER_DIRS {
-                match get_push_to_next_integer_coords_in_dir_with_world(movement_pos + spd + dir, dir, world) {
-                    Some(push) => {
-                        //spd.z = 0.0;
-                        movement_pos += push;
-                    },
-                    None => ()
+            let moved_aabb = (collider.collider + spd);
+            let mut smallest_nudge = Vec3Df::all_ones();
+            for vertex in moved_aabb.get_ground_vertices() {
+                let (nudges, vertical) = compute_nudges_from(vertex, spd, collider, world);
+                touching_ground = touching_ground | vertical;
+                if touching_ground {
+                    if nudges.z.abs() < smallest_nudge.z.abs() {
+                        smallest_nudge = nudges;
+                    }
                 }
-            }
-            /*for arete in collider.collider.get_ground_vertices() {
-                match world.world.get_voxel_at(get_voxel_pos(arete)) {
-                    Some(voxel) => {    
-                        if !world.world.get_voxel_types()[voxel.voxel_type as usize].is_completely_empty() {
-                            touching_ground = true;
-                            spd.z = spd.z.abs();
-                            spd += movement.pos - arete;
-                        }
-                    },
-                    None => {
-                        spd += movement.pos - arete;
-                        spd.z = spd.z.abs();
-                        touching_ground = true;
+                else {
+                    if nudges.norme_square() < smallest_nudge.norme_square() {
+                        smallest_nudge = nudges;
                     }
                 }
             }
-            for arete in collider.collider.get_top_vertices() {
-                match world.world.get_voxel_at(get_voxel_pos(arete)) {
-                    Some(voxel) => {    
-                        if !world.world.get_voxel_types()[voxel.voxel_type as usize].is_completely_empty() {
-                            spd +=  movement.pos - arete;
-                        }
-                    },
-                    None => {
-                        spd += movement.pos - arete;
+            if !touching_ground {
+                for vertex in moved_aabb.get_top_vertices() {
+                    let (nudges, vertical) = compute_nudges_from(vertex, spd, collider, world);
+                    if nudges.norme_square() < smallest_nudge.norme_square() {
+                        smallest_nudge = nudges;
                     }
                 }
-            }*/
-            match world.world.get_type_of_voxel_at(get_voxel_pos((movement_pos + spd + DOWN_DIR /*+ Vec3D::new(0.0, 0.0, -GRAVITY)*/))) {
+            }
+            if smallest_nudge != Vec3Df::all_ones() {
+                spd += smallest_nudge;
+            }
+           
+            
+            /*match world.world.get_type_of_voxel_at(get_voxel_pos((movement_pos + spd + DOWN_DIR /*+ Vec3D::new(0.0, 0.0, -GRAVITY)*/))) {
                 Some(voxel_type) => if !touching_ground && voxel_type.is_completely_empty() {
                     spd.z -= GRAVITY;
                 }
@@ -306,7 +376,7 @@ fn after_main_tick<'a>(turn:EntityTurn, id:usize, first_ent:&GameEntityVecRead<'
                 None => if !touching_ground {
                     spd.z -= GRAVITY;
                 }
-            }
+            }*/
             match world.world.set_grid.get_point_move_update(&movement.pos, &(movement_pos + spd), id, 2) {
                 Some(update) => {
                     //dbg!(update.clone());

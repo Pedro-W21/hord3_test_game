@@ -3,6 +3,8 @@ use std::ops::{Add, AddAssign};
 use hord3::horde::geometry::vec3d::{Vec3D, Vec3Df};
 use to_from_bytes_derive::{FromBytes, ToBytes};
 
+use crate::{game_engine::CoolVoxel, game_map::{get_voxel_pos, GameMap, VoxelType}};
+
 #[derive(Clone, Copy, Debug, PartialEq, ToBytes, FromBytes)]
 pub struct AABB {
     max: Vec3Df,
@@ -97,6 +99,21 @@ impl AABB {
         self.min.x += speed.x;
         self.min.y += speed.y;
         self.min.z += speed.z;
+    }
+    pub fn collision_world(&self, world:&GameMap<CoolVoxel>) -> bool {
+        for vertex in self.get_vertices() {
+            match world.get_voxel_at(get_voxel_pos(vertex)) {
+                Some(voxel) => {    
+                    if !world.get_voxel_types()[voxel.voxel_type as usize].is_completely_empty() {
+                        return true
+                    }
+                },
+                None => {
+                    return true
+                }
+            }
+        }
+        false
     }
 }
 

@@ -77,7 +77,7 @@ impl ShaderFrameData for GameShaderFrameData {
                     if self.do_normals {
                         let normal = old_normal.to_le_bytes().map(|byte| {std::mem::transmute::<u8, i8>(byte)});
                         let normal_vec = Vec3Df::new(normal[0] as f32, normal[1] as f32, normal[2] as f32);
-                        let scalar = (normal_vec.dot(&self.sun_dir) * 1.0/128.0 * self.sun_dir_norm + 0.1).clamp(0.2, 1.0);
+                        let scalar = (normal_vec.dot(&self.sun_dir) * 1.0/128.0 * self.sun_dir_norm + 0.1).clamp(0.4, 1.0);
                         rgb_to_argb(collux_f32_a_u8((one_m_coef * (fr * scalar) + coefficient * self.fog_color_f.0, one_m_coef * (fg * scalar) + coefficient * self.fog_color_f.1,one_m_coef * (fb * scalar) + coefficient * self.fog_color_f.2)))
                         
                     }

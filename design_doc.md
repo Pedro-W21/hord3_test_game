@@ -59,3 +59,11 @@ blocs piège :
    - application du 00
       - LUT pour savoir où chaque bit du empty se swap
    - application du 000
+
+## How to do voxel collision
+- do other kinds of collision first in main tick and add to speed
+- do voxel checks in after main
+- if any point of the AABB is inside terrain :
+   - compute the "speed nudge" needed to get it to an empty tile quickest in all directions
+   - compare all nudges, take the smallest one in all directions (in absolute terms) that makes the collider no longer collide with anything
+   - give priority to up/down, if only an up/down nudge works, do that

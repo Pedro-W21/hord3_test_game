@@ -131,13 +131,13 @@ fn main() {
 
         let positions = get_positions_of_air_written_text("Hord3".to_string(), Metrics::new(100.0, 80.0), "don't_care".to_string(), 1000, 1000, Color(rgb_to_argb((255,255,255))), (0,0), Vec3D::new(0.0, -1.0, 0.0), Vec3D::new(0.01, 0.0, -1.0), Vec3D::new(-155.0, 155.0, 180.0));
         for pos in positions {
-            writer.new_ent(NewGameEntity::new(Movement{pos:pos, speed:Vec3D::new(1.0, 0.0, 0.0), orient:Orientation::zero(), rotat:Rotation::from_orientation(Orientation::zero())}, Stats {static_type_id:8, health:0, damage:0, stamina:0}, Collider{team:0, collider:AABB::new(pos - Vec3D::all_ones() * 0.5, pos + Vec3D::all_ones() * 0.5)}));
+            //writer.new_ent(NewGameEntity::new(Movement{pos:pos, speed:Vec3D::new(1.0, 0.0, 0.0), orient:Orientation::zero(), rotat:Rotation::from_orientation(Orientation::zero())}, Stats {static_type_id:8, health:0, damage:0, stamina:0}, Collider{team:0, collider:AABB::new(pos - Vec3D::all_ones() * 0.5, pos + Vec3D::all_ones() * 0.5)}));
         }
     }
     
     let entity_vec_2 = GameEntityVec::new(1000);
     
-    let windowing = WindowingHandler::new::<MiniFBWindow>(HordeWindowDimensions::new(1920, 1080), HordeColorFormat::ARGB8888);
+    let windowing = WindowingHandler::new::<MiniFBWindow>(HordeWindowDimensions::new(1280, 720), HordeColorFormat::ARGB8888);
     let framebuf = windowing.get_outside_framebuf();
     let mut shader = Arc::new(GameShader::new_default());
     let viewport_data = {
@@ -166,7 +166,7 @@ fn main() {
     let (mut simpleui, user_events) = SimpleUI::new(20, 20, framebuf.clone(), mouse, unbounded().1);
 
     // TRES IMPORTANTTTTTTTTTTTTT
-    //simpleui.add_many_connected_elements(get_list_choice(vec!["TerrainModifier".to_string(), "TileChooser".to_string(), "TerrainZoneModifier".to_string(), "LightSpreader".to_string()], UIVector::new(UIUnit::ParentWidthProportion(0.9), UIUnit::ParentHeightProportion(0.3)), UIDimensions::Decided(UIVector::new(UIUnit::ParentWidthProportion(0.1), UIUnit::ParentHeightProportion(0.3))), "Tools".to_string(), "rien".to_string()));
+    simpleui.add_many_connected_elements(get_list_choice(vec!["TerrainModifier".to_string(), "TileChooser".to_string(), "TerrainZoneModifier".to_string(), "LightSpreader".to_string()], UIVector::new(UIUnit::ParentWidthProportion(0.9), UIUnit::ParentHeightProportion(0.3)), UIDimensions::Decided(UIVector::new(UIUnit::ParentWidthProportion(0.1), UIUnit::ParentHeightProportion(0.3))), "Tools".to_string(), "rien".to_string()));
     
     {
         println!("START TEXTURE");
@@ -327,7 +327,7 @@ fn main() {
     let mut input_handler = GameInputHandler::new(mouse2.clone(), 3.0, outside_events);
     let mut tile_editor = TileEditorData::new(simpleui.clone(), input_handler.get_new_camera(), mouse2);
     {
-        //tile_editor.initial_ui_work(&vectorinator.get_texture_read());
+        tile_editor.initial_ui_work(&vectorinator.get_texture_read());
     }
     println!("FINISHED INITIAL");
     /*let mut sequence = CameraSequence::new(vec![
@@ -368,50 +368,39 @@ fn main() {
         world_clone.do_render_changes(&mut writer);
         world_clone.make_meshes_invisible(&mut writer);
     }   
-    let mut cutscene = get_real_demo_cutscene(&viewport_data);
+    // let mut cutscene = get_real_demo_cutscene(&viewport_data);
     for i in 0..7500 {
         //println!("{i}");
 
         let mut start = Instant::now();
         input_handler.update_keyboard();
         let (new_fog_col, new_normal_vec, new_night_state) = day_night.get_next_color();
-        if prev_night_status != new_night_state {
+        //if prev_night_status != new_night_state {
+        //    let mut writer = vectorinator.get_write();
+        //    spare_world = world_handler.world.read().unwrap().clone();
+        //    spare_world.make_meshes_invisible(&mut writer);
+        //    world_clone.make_meshes_visible(&mut writer);
+        //    world_clone.set_grid = spare_world.set_grid.clone();
+        //    *world_handler.world.write().unwrap() = world_clone.clone();
+        //}
+        //prev_night_status = new_night_state;
+        let new_camera = {
             let mut writer = vectorinator.get_write();
-            spare_world = world_handler.world.read().unwrap().clone();
-            spare_world.make_meshes_invisible(&mut writer);
-            world_clone.make_meshes_visible(&mut writer);
-            world_clone.set_grid = spare_world.set_grid.clone();
-            *world_handler.world.write().unwrap() = world_clone.clone();
-        }
-        prev_night_status = new_night_state;
-        let new_camera = if !cutscene.advance_everything(&vectorinator, &engine, &mut simpleui) {
-            let mut writer = vectorinator.get_write();
-            vectorinator.shader_data.do_normals.store(!new_night_state, Ordering::Relaxed);
+            //vectorinator.shader_data.do_normals.store(!new_night_state, Ordering::Relaxed);
             *vectorinator.shader_data.sun_dir.write().unwrap() = -new_normal_vec;
             *vectorinator.shader_data.fog_color.write().unwrap() = rgb_to_argb(new_fog_col);
             let new_camera =input_handler.get_new_camera();
             *writer.camera = new_camera.clone();//(i as f32 / 500.0) * PI/2.0));
-
+            /*{
+                let mut writer = engine.entity_1.get_write();
+                let pos = Vec3D::new((fastrand::f32() - 0.5) * 2.0 * 150.0, (fastrand::f32() - 0.5) * 2.0 * 150.0, 50.0);
+                writer.new_ent(NewGameEntity::new(Movement{pos:pos, speed:Vec3D::zero(), orient:Orientation::zero(), rotat:Rotation::from_orientation(Orientation::zero())}, Stats {static_type_id:8, health:0, damage:0, stamina:0}, Collider{team:0, collider:AABB::new(pos - Vec3D::all_ones() * 0.5, pos + Vec3D::all_ones() * 0.5)}));
+        
+            }*/
             // dbg!(new_camera.clone());
             engine.extra_data.current_render_data.write().unwrap().0 = new_camera.clone();
             engine.extra_data.tick.fetch_add(1, Ordering::Relaxed);
 
-            /*thread::sleep(Duration::from_millis(10));*/
-            new_camera
-            
-        }
-        else {
-            let mut writer = vectorinator.get_write();
-
-            vectorinator.shader_data.do_normals.store(!new_night_state, Ordering::Relaxed);
-            *vectorinator.shader_data.sun_dir.write().unwrap() = -new_normal_vec;
-            *vectorinator.shader_data.fog_color.write().unwrap() = rgb_to_argb(new_fog_col);
-            //vectorinator.shader_data.
-            let new_camera =writer.camera.clone();
-
-            *writer.camera = new_camera.clone();//(i as f32 / 500.0) * PI/2.0));
-            engine.extra_data.current_render_data.write().unwrap().0 = new_camera.clone();
-            engine.extra_data.tick.fetch_add(1, Ordering::Relaxed);
             /*thread::sleep(Duration::from_millis(10));*/
             new_camera
         };
@@ -425,7 +414,7 @@ fn main() {
         }
         tile_editor.do_mouse_handling(&mut world_handler.world.write().unwrap());
         tile_editor.handle_keyboard(&input_handler, &mut world_handler.world.write().unwrap());
-        //tile_editor.do_rendering(&vectorinator, &world_handler.world.read().unwrap());
+        tile_editor.do_rendering(&vectorinator, &world_handler.world.read().unwrap());
         scheduler.initialise(queue.clone());
         scheduler.tick();
         let mut fps = 1.0/Instant::now().checked_duration_since(start).unwrap().as_secs_f64();
