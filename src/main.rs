@@ -2,7 +2,7 @@
 #![feature(int_roundings)]
 use std::{collections::HashMap, f32::consts::PI, path::PathBuf, simd::Simd, sync::{atomic::{AtomicUsize, Ordering}, Arc, RwLock}, thread, time::{Duration, Instant}};
 
-use colliders::AABB;
+use game_entity::colliders::AABB;
 use cosmic_text::{Color, Font, Metrics};
 use crossbeam::channel::unbounded;
 use cutscene::{camera_movement::{CameraMovement, CameraMovementDuration, CameraMovementElement, CameraSequence}, demo_cutscene::{get_demo_cutscene, get_empty_cutscene}, game_shader::GameShader, real_demo_cutscene::get_real_demo_cutscene, write_in_the_air::get_positions_of_air_written_text, written_texture::get_written_texture_buffer};
@@ -18,9 +18,10 @@ use hord3::{defaults::{default_frontends::minifb_frontend::MiniFBWindow, default
 use noise::{NoiseFn, Perlin, Seedable};
 use tile_editor::{get_tile_voxels, TileEditorData};
 
+use crate::{game_entity::{actions::{Action, ActionKind, ActionSource, ActionTimer, ActionsEvent, ActionsUpdate, StaticGameActions}, director::{Director, DirectorKind, StaticDirector}, planner::StaticPlanner}, game_map::get_voxel_pos};
+
 pub mod game_map;
 pub mod flat_game_map;
-pub mod colliders;
 pub mod game_entity;
 pub mod game_engine;
 pub mod game_tasks;
@@ -85,48 +86,14 @@ fn main() {
     let entity_vec = GameEntityVec::new(1000);
     {
         let mut writer = entity_vec.get_write();
-        writer.new_sct(StaticGameEntity{movement:StaticMovement{}, mesh_info:StaticMeshInfo{mesh_id:MeshID::Named("EntityMesh".to_string()),mesh_data:Mesh::new(MeshLODS::new(vec![MeshLODType::Mesh(Arc::new(simple_line(-Vec3D::all_ones()*0.5, Vec3D::all_ones()*0.5, 2, (255,255,255))))]), "EntityMesh".to_string(), 2.0)}, stats:StaticStats{}, collider:StaticCollider{init_aabb:AABB::new(-Vec3D::all_ones()*0.5, Vec3D::all_ones()*0.5)}});
-        // For rendering presentation
-        writer.new_sct(StaticGameEntity{movement:StaticMovement{}, mesh_info:StaticMeshInfo{mesh_id:MeshID::Named("WIREFRAME_SPHERE_MESH".to_string()),mesh_data:wireframe_sphere_mesh()}, stats:StaticStats{}, collider:StaticCollider{init_aabb:AABB::new(-Vec3D::all_ones()*0.5, Vec3D::all_ones()*0.5)}});
-        writer.new_sct(StaticGameEntity{movement:StaticMovement{}, mesh_info:StaticMeshInfo{mesh_id:MeshID::Named("XYZ_MESH".to_string()),mesh_data:xyz_mesh()}, stats:StaticStats{}, collider:StaticCollider{init_aabb:AABB::new(-Vec3D::all_ones()*0.5, Vec3D::all_ones()*0.5)}});
-        writer.new_sct(StaticGameEntity{movement:StaticMovement{}, mesh_info:StaticMeshInfo{mesh_id:MeshID::Named("SPHERE_MESH".to_string()),mesh_data:sphere_mesh()}, stats:StaticStats{}, collider:StaticCollider{init_aabb:AABB::new(-Vec3D::all_ones()*0.5, Vec3D::all_ones()*0.5)}});
-        writer.new_sct(StaticGameEntity{movement:StaticMovement{}, mesh_info:StaticMeshInfo{mesh_id:MeshID::Named("TEXTURED_SPHERE_MESH".to_string()),mesh_data:textured_sphere_mesh()}, stats:StaticStats{}, collider:StaticCollider{init_aabb:AABB::new(-Vec3D::all_ones()*0.5, Vec3D::all_ones()*0.5)}});
-        
-        // For ECS presentation
-        writer.new_sct(StaticGameEntity{movement:StaticMovement{}, mesh_info:StaticMeshInfo{mesh_id:MeshID::Named("CLUSTERED_ENT_MESH".to_string()),mesh_data:clustered_ent_mesh()}, stats:StaticStats{}, collider:StaticCollider{init_aabb:AABB::new(-Vec3D::all_ones()*0.5, Vec3D::all_ones()*0.5)}});
-        writer.new_sct(StaticGameEntity{movement:StaticMovement{}, mesh_info:StaticMeshInfo{mesh_id:MeshID::Named("SPREAD_OUT_ENT_MESH".to_string()),mesh_data:spread_out_ent_mesh()}, stats:StaticStats{}, collider:StaticCollider{init_aabb:AABB::new(-Vec3D::all_ones()*0.5, Vec3D::all_ones()*0.5)}});
-        writer.new_sct(StaticGameEntity{movement:StaticMovement{}, mesh_info:StaticMeshInfo{mesh_id:MeshID::Named("SECOND_SPREAD_OUT_ENT_MESH".to_string()),mesh_data:second_spread_out_ent_mesh()}, stats:StaticStats{}, collider:StaticCollider{init_aabb:AABB::new(-Vec3D::all_ones()*0.5, Vec3D::all_ones()*0.5)}});
+        writer.new_sct(StaticGameEntity{planner:StaticPlanner{},director:StaticDirector {kind:DirectorKind::Nothing},actions:StaticGameActions {base_actions:Vec::with_capacity(8)},movement:StaticMovement{}, mesh_info:StaticMeshInfo{mesh_id:MeshID::Named("EntityMesh".to_string()),mesh_data:Mesh::new(MeshLODS::new(vec![MeshLODType::Mesh(Arc::new(simple_line(-Vec3D::all_ones()*0.5, Vec3D::all_ones()*0.5, 2, (255,255,255))))]), "EntityMesh".to_string(), 2.0)}, stats:StaticStats{}, collider:StaticCollider{init_aabb:AABB::new(-Vec3D::all_ones()*0.5, Vec3D::all_ones()*0.5)}});
 
-        writer.new_sct(StaticGameEntity{movement:StaticMovement{}, mesh_info:StaticMeshInfo{mesh_id:MeshID::Named("GREY_MESH".to_string()),mesh_data:grey_sphere_mesh()}, stats:StaticStats{}, collider:StaticCollider{init_aabb:AABB::new(-Vec3D::all_ones()*0.5, Vec3D::all_ones()*0.5)}});
-        
-        // For rendering presentation
-        writer.new_ent(NewGameEntity::new(Movement{pos:Vec3D::zero(), speed:Vec3D::zero(), orient:Orientation::zero(), rotat:Rotation::from_orientation(Orientation::zero())}, Stats {static_type_id:1, health:0, damage:0, stamina:0}, Collider{team:0, collider:AABB::new( - Vec3D::all_ones() * 0.5, Vec3D::all_ones() * 0.5)}));
-        writer.new_ent(NewGameEntity::new(Movement{pos:Vec3D::zero(), speed:Vec3D::zero(), orient:Orientation::zero(), rotat:Rotation::from_orientation(Orientation::zero())}, Stats {static_type_id:2, health:0, damage:0, stamina:0}, Collider{team:0, collider:AABB::new( - Vec3D::all_ones() * 0.5, Vec3D::all_ones() * 0.5)}));
-        writer.new_ent(NewGameEntity::new(Movement{pos:Vec3D::zero(), speed:Vec3D::zero(), orient:Orientation::zero(), rotat:Rotation::from_orientation(Orientation::zero())}, Stats {static_type_id:3, health:0, damage:0, stamina:0}, Collider{team:0, collider:AABB::new( - Vec3D::all_ones() * 0.5, Vec3D::all_ones() * 0.5)}));
-        writer.new_ent(NewGameEntity::new(Movement{pos:Vec3D::zero(), speed:Vec3D::zero(), orient:Orientation::zero(), rotat:Rotation::from_orientation(Orientation::zero())}, Stats {static_type_id:4, health:0, damage:0, stamina:0}, Collider{team:0, collider:AABB::new( - Vec3D::all_ones() * 0.5, Vec3D::all_ones() * 0.5)}));
-        
-        // For ECS presentation
-        for i in 0..6 {
-            writer.new_ent(NewGameEntity::new(Movement{pos:Vec3D::all_ones() * 1000.0, speed:Vec3D::zero(), orient:Orientation::zero(), rotat:Rotation::from_orientation(Orientation::zero())}, Stats {static_type_id:4, health:0, damage:0, stamina:0}, Collider{team:0, collider:AABB::new( - Vec3D::all_ones() * 0.5, Vec3D::all_ones() * 0.5)}));
-        }
-
-        for i in 0..10 {
-            writer.new_ent(NewGameEntity::new(Movement{pos:Vec3D::all_ones() * 1000.0, speed:Vec3D::zero(), orient:Orientation::zero(), rotat:Rotation::from_orientation(Orientation::zero())}, Stats {static_type_id:5, health:0, damage:0, stamina:0}, Collider{team:0, collider:AABB::new( - Vec3D::all_ones() * 0.5, Vec3D::all_ones() * 0.5)}));
-            
-        }
-        for i in 0..10 {
-            writer.new_ent(NewGameEntity::new(Movement{pos:Vec3D::all_ones() * 1000.0, speed:Vec3D::zero(), orient:Orientation::zero(), rotat:Rotation::from_orientation(Orientation::zero())}, Stats {static_type_id:6, health:0, damage:0, stamina:0}, Collider{team:0, collider:AABB::new( - Vec3D::all_ones() * 0.5, Vec3D::all_ones() * 0.5)}));
-            
-        }
-        for i in 0..10 {
-            writer.new_ent(NewGameEntity::new(Movement{pos:Vec3D::all_ones() * 1000.0, speed:Vec3D::zero(), orient:Orientation::zero(), rotat:Rotation::from_orientation(Orientation::zero())}, Stats {static_type_id:7, health:0, damage:0, stamina:0}, Collider{team:0, collider:AABB::new( - Vec3D::all_ones() * 0.5, Vec3D::all_ones() * 0.5)}));
-            
-        }
+        writer.new_sct(StaticGameEntity{planner:StaticPlanner{},director:StaticDirector {kind:DirectorKind::Nothing},actions:StaticGameActions {base_actions:Vec::with_capacity(8)},movement:StaticMovement{}, mesh_info:StaticMeshInfo{mesh_id:MeshID::Named("GREY_MESH".to_string()),mesh_data:grey_sphere_mesh()}, stats:StaticStats{}, collider:StaticCollider{init_aabb:AABB::new(-Vec3D::all_ones()*0.5, Vec3D::all_ones()*0.5)}});
 
 
         for i in 0..1000 {
             let pos = Vec3D::new((fastrand::f32() - 0.5) * 2.0 * 150.0, (fastrand::f32() - 0.5) * 2.0 * 150.0, 50.0);
-            writer.new_ent(NewGameEntity::new(Movement{pos:pos, speed:Vec3D::zero(), orient:Orientation::zero(), rotat:Rotation::from_orientation(Orientation::zero())}, Stats {static_type_id:8, health:0, damage:0, stamina:0}, Collider{team:0, collider:AABB::new(pos - Vec3D::all_ones() * 0.5, pos + Vec3D::all_ones() * 0.5)}));
+            writer.new_ent(NewGameEntity::new(Movement{against_wall:false, touching_ground:false,pos:pos, speed:Vec3D::zero(), orient:Orientation::zero(), rotat:Rotation::from_orientation(Orientation::zero())}, Stats {static_type_id:1, health:0, damage:0, stamina:0, ground_speed:0.2, jump_height:1.0}, Collider{team:0, collider:AABB::new(pos - Vec3D::all_ones() * 0.5, pos + Vec3D::all_ones() * 0.5)}, Director::new(DirectorKind::Nothing)));
         }
 
         let positions = get_positions_of_air_written_text("Hord3".to_string(), Metrics::new(100.0, 80.0), "don't_care".to_string(), 1000, 1000, Color(rgb_to_argb((255,255,255))), (0,0), Vec3D::new(0.0, -1.0, 0.0), Vec3D::new(0.01, 0.0, -1.0), Vec3D::new(-155.0, 155.0, 180.0));
@@ -391,12 +358,18 @@ fn main() {
             *vectorinator.shader_data.fog_color.write().unwrap() = rgb_to_argb(new_fog_col);
             let new_camera =input_handler.get_new_camera();
             *writer.camera = new_camera.clone();//(i as f32 / 500.0) * PI/2.0));
-            /*{
-                let mut writer = engine.entity_1.get_write();
+            if i > 400 {
+                let mut reader = engine.entity_1.get_read();
+
+                let ent = fastrand::usize(0..reader.actions.len());
                 let pos = Vec3D::new((fastrand::f32() - 0.5) * 2.0 * 150.0, (fastrand::f32() - 0.5) * 2.0 * 150.0, 50.0);
-                writer.new_ent(NewGameEntity::new(Movement{pos:pos, speed:Vec3D::zero(), orient:Orientation::zero(), rotat:Rotation::from_orientation(Orientation::zero())}, Stats {static_type_id:8, health:0, damage:0, stamina:0}, Collider{team:0, collider:AABB::new(pos - Vec3D::all_ones() * 0.5, pos + Vec3D::all_ones() * 0.5)}));
-        
-            }*/
+                let voxel_pos = get_voxel_pos(pos);
+                let target_pos = engine.world.world.read().unwrap().get_ceiling_at(voxel_pos, 100) + Vec3D::new(0, 0, 1);
+                let mut counter = reader.actions[ent].get_counter().clone();
+                let next_action = counter.get_next_id();
+                reader.tunnels.actions_out.send(ActionsEvent::new(ent, None, ActionsUpdate::AddAction(Action::new(next_action, engine.extra_data.tick.load(Ordering::Relaxed), ActionTimer::Delay(500), ActionKind::PathToPosition(Vec3Df::new(target_pos.x as f32, target_pos.y as f32, target_pos.z as f32), 0.7), ActionSource::Director))));
+                reader.tunnels.actions_out.send(ActionsEvent::new(ent, None, ActionsUpdate::UpdateCounter(counter)));
+            }
             // dbg!(new_camera.clone());
             engine.extra_data.current_render_data.write().unwrap().0 = new_camera.clone();
             engine.extra_data.tick.fetch_add(1, Ordering::Relaxed);

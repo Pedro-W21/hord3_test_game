@@ -67,3 +67,39 @@ blocs piège :
    - compute the "speed nudge" needed to get it to an empty tile quickest in all directions
    - compare all nudges, take the smallest one in all directions (in absolute terms) that makes the collider no longer collide with anything
    - give priority to up/down, if only an up/down nudge works, do that
+
+## Experiment concept : Agent playground
+- every entity is an "agent"
+- agents have :
+   - collider
+   - inventory
+   - movement characteristics
+      - jump height
+      - movement speed
+   - "Planning AI"
+      - pathfinding/moving through path
+         - A* through integer grid
+         - start at integered origin, explore in integer direction towards the objective
+         - if that has already been explored, explore in all directions until you can explore towards the objective
+         - have HashSet of all positions that have been explored (as in a path already goes through there, or it's impassable)
+         - make a tree inside a vec
+            - each node has a parent, tried directions (with their node ids) and 
+      - aiming/shooting
+      - keeps track of 
+   - "Actions"
+      - list of "actions" like :
+         - jumping
+         - moving in a direction
+         - turning
+         - placing/breaking block
+         - using an item
+      - if an action can be done/tried directly, do it (e.g. jumping)
+      - if it requires planning, ask "planning AI" for extra actions
+      - each action has an ID, so the Director can know when a multi-step action has ended
+      - an action can be given a deadline/timeout (in game ticks)
+      - an action can either :
+         - End (was possible to try, and tried)
+         - timeout (wasn't done in time)
+   - "Director"
+      - provides actions to perform
+      - can be a player, an LLM, an expert system, nothing, a loop...

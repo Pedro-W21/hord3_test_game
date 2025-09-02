@@ -2,8 +2,12 @@ use entity_derive::Entity;
 use hord3::{defaults::default_rendering::vectorinator_binned::{meshes::{Mesh, MeshID, MeshInstance}, VectorinatorWrite}, horde::{game_engine::{entity::{Component, ComponentEvent, EVecStopsIn, EVecStopsOut, Entity, EntityID, EntityVec, NewEntity, StaticComponent, StaticEntity}, multiplayer::Identify, position::EntityPosition, static_type_id::HasStaticTypeID}, geometry::{rotation::{Orientation, Rotation}, vec3d::Vec3Df}}};
 use to_from_bytes_derive::{FromBytes, ToBytes};
 
-use crate::colliders::AABB;
+use crate::game_entity::{actions::Actions, colliders::AABB, director::Director, planner::Planner};
 pub mod cutscene_support;
+pub mod colliders;
+pub mod actions;
+pub mod director;
+pub mod planner;
 
 
 #[derive(Clone, Debug, PartialEq, ToBytes, FromBytes)]
@@ -11,7 +15,9 @@ pub struct Movement {
     pub pos:Vec3Df,
     pub speed:Vec3Df,
     pub orient:Orientation,
-    pub rotat:Rotation
+    pub rotat:Rotation,
+    pub touching_ground:bool,
+    pub against_wall:bool,
 }
 
 #[derive(Clone)]
@@ -26,9 +32,12 @@ impl StaticComponent for StaticMovement {
 #[derive(Clone, ToBytes, FromBytes)]
 pub enum MovementEventVariant {
     UpdatePos(Vec3Df),
+    AddToSpeed(Vec3Df),
     UpdateSpeed(Vec3Df),
     UpdateOrient(Orientation),
-    UpdateRotat(Rotation)
+    UpdateRotat(Rotation),
+    UpdateTouchingGround(bool),
+    UpdateAgainstWall(bool)
 }
 
 #[derive(Clone, ToBytes, FromBytes)]
@@ -52,9 +61,12 @@ impl<ID:Identify> ComponentEvent<Movement, ID> for MovementEvent<ID> {
     fn apply_to_component(self, components:&mut Vec<Movement>) {
         match self.variant {
             MovementEventVariant::UpdatePos(new_pos) => components[self.id].pos = new_pos,
+            MovementEventVariant::AddToSpeed(speed_add) => components[self.id].speed += speed_add,
             MovementEventVariant::UpdateOrient(new_orient) => components[self.id].orient = new_orient,
             MovementEventVariant::UpdateRotat(new_rotat) => components[self.id].rotat = new_rotat,
             MovementEventVariant::UpdateSpeed(spd) => components[self.id].speed = spd,
+            MovementEventVariant::UpdateTouchingGround(touching) => components[self.id].touching_ground = touching,
+            MovementEventVariant::UpdateAgainstWall(against) => components[self.id].against_wall = against
         }
     }
     fn get_source(&self) -> Option<ID> {
@@ -66,7 +78,7 @@ impl<ID:Identify> Component<ID> for Movement {
     type CE = MovementEvent<ID>;
     type SC = StaticMovement;
     fn from_static(static_comp:&Self::SC) -> Self {
-        Self { pos:Vec3Df::zero(), speed:Vec3Df::zero(), orient:Orientation::zero(), rotat: Rotation::from_orientation(Orientation::zero()) }
+        Self { pos:Vec3Df::zero(), speed:Vec3Df::zero(), orient:Orientation::zero(), rotat: Rotation::from_orientation(Orientation::zero()), touching_ground:false, against_wall:false }
     }
 }
 
@@ -195,6 +207,8 @@ pub struct Stats {
     pub health:i32,
     pub damage:i32,
     pub stamina:i32,
+    pub ground_speed:f32,
+    pub jump_height:f32,
 }
 
 #[derive(Clone, ToBytes, FromBytes)]
@@ -241,7 +255,7 @@ impl<ID:Identify> Component<ID> for Stats {
     type CE = StatEvent<ID>;
     type SC = StaticStats;
     fn from_static(static_comp:&Self::SC) -> Self {
-        Self { static_type_id: 0, health: 0, damage: 0, stamina: 0 }
+        Self { static_type_id: 0, health: 0, damage: 0, stamina: 0, jump_height:1.0, ground_speed:0.2 }
     }
 }
 
@@ -257,7 +271,10 @@ impl<ID:Identify> NewEntity<GameEntity,ID> for NewGameEntity {
             movement:self.movement,
             stats:self.stats,
             mesh_info:MeshInfo { instance_id: None },
-            collider:self.collider
+            collider:self.collider,
+            actions:Actions::new(),
+            director:self.director,
+            planner:Planner::new()
         }
     }
 }
@@ -292,5 +309,9 @@ pub struct GameEntity {
     #[used_in_render]
     mesh_info:MeshInfo,
     #[used_in_new]
-    collider:Collider
+    collider:Collider,
+    actions:Actions,
+    #[used_in_new]
+    director:Director,
+    planner:Planner
 }

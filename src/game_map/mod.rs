@@ -707,6 +707,9 @@ impl<V:Voxel> GameMap<V> {
             self.dims.chunk_height_i,
         )
     }
+    pub fn is_voxel_solid(&self, voxel:WorldVoxelPos) -> bool {
+        self.get_voxel_at(voxel).is_some_and(|voxel| {!self.get_voxel_types()[voxel.voxel_id()].is_completely_empty()})
+    }
     pub fn get_voxel_at_mut(&mut self, voxel:WorldVoxelPos) -> Option<&mut V> {
         let dims = self.dims.clone();
         self.get_chunk_at_mut(self.get_chunk_pos_i(voxel)).and_then(|chunk| {chunk.get_at_worldpos_mut(voxel, &dims)})
@@ -718,6 +721,17 @@ impl<V:Voxel> GameMap<V> {
     pub fn get_type_of_voxel_at(&self, voxel:WorldVoxelPos) -> Option<&V::VT> {
         let dims = self.dims.clone();
         self.get_chunk_at(self.get_chunk_pos_i(voxel)).and_then(|chunk| {chunk.get_at_worldpos(voxel, &dims)}).and_then(|voxel| {Some(&self.voxel_types[voxel.voxel_id()])})
+    }
+    pub fn get_ceiling_at(&self, pos:WorldVoxelPos, margin:i32) -> WorldVoxelPos {
+        for z in ((pos.z - margin)..(pos.z + margin)).rev() {
+            match self.get_voxel_at(Vec3D::new(pos.x, pos.y, z)) {
+                Some(voxel) => if !self.get_voxel_types()[voxel.voxel_id()].is_completely_empty() {
+                    return Vec3D::new(pos.x, pos.y, z)
+                },
+                None => ()
+            }
+        }
+        pos
     }
     pub fn get_voxel_types(&self) -> &Vec<V::VT> {
         &self.voxel_types

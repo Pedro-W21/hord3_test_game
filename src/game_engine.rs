@@ -1,9 +1,9 @@
-use std::{path::PathBuf, sync::{atomic::AtomicUsize, Arc, RwLock}};
+use std::{path::PathBuf, sync::{atomic::{AtomicUsize, Ordering}, Arc, RwLock}};
 
 use engine_derive::GameEngine;
 use hord3::{defaults::default_rendering::vectorinator_binned::{rendering_spaces::ViewportData, shaders::NoOpShader, Vectorinator}, horde::{game_engine::{engine::{GameEngine, MovingObjectID}, entity::{Entity, EntityVec, MultiplayerEntity, Renderable}, multiplayer::Identify, world::{WorldComputeHandler, WorldHandler, WorldOutHandler, WorldWriteHandler}}, geometry::vec3d::{Vec3D, Vec3Df}, rendering::camera::Camera, scheduler::IndividualTask, sound::{ARWWaves, WavesHandler}}};
 
-use crate::{colliders::AABB, cutscene::{game_shader::GameShader, reverse_camera_coords::reverse_from_raster_to_worldpos}, game_entity::{Collider, ColliderEvent, ColliderEventVariant, GameEntity, GameEntityVecRead, GameEntityVecWrite, MovementEvent, MovementEventVariant}, game_map::{get_voxel_pos, GameMap, GameMapEvent, Voxel, VoxelLight, VoxelModel, VoxelType}};
+use crate::{cutscene::{game_shader::GameShader, reverse_camera_coords::reverse_from_raster_to_worldpos}, game_entity::{actions::{ActionsEvent, ActionsUpdate}, colliders::AABB, Collider, ColliderEvent, ColliderEventVariant, GameEntity, GameEntityVecRead, GameEntityVecWrite, MovementEvent, MovementEventVariant}, game_map::{get_voxel_pos, GameMap, GameMapEvent, Voxel, VoxelLight, VoxelModel, VoxelType}};
 
 
 #[derive(Clone)]
@@ -229,8 +229,12 @@ fn compute_tick<'a>(turn:EntityTurn, id:usize, first_ent:&GameEntityVecRead<'a, 
                     }
                 }
             }
-            first_ent.tunnels.movement_out.send(MovementEvent::new(id, None, MovementEventVariant::UpdateSpeed(movement.speed + total_push)));
-            
+            first_ent.tunnels.movement_out.send(MovementEvent::new(id, None, MovementEventVariant::AddToSpeed(total_push)));
+
+            let actions = &first_ent.actions[id];
+            let mut counter = actions.get_counter().clone();
+            actions.perform(id, first_ent, second_ent, world, &mut counter, extra_data.tick.load(Ordering::Relaxed));
+            first_ent.tunnels.actions_out.send(ActionsEvent::new(id, None, ActionsUpdate::UpdateCounter(counter)));
         },
         EntityTurn::entity_2 => {
 
@@ -336,7 +340,14 @@ fn after_main_tick<'a>(turn:EntityTurn, id:usize, first_ent:&GameEntityVecRead<'
             if spd.z.abs() > 0.45 {
                 spd.z = 0.45 * spd.z.signum()
             }
+            if spd.x.abs() > 0.45 {
+                spd.x = 0.45 * spd.x.signum()
+            }
+            if spd.y.abs() > 0.45 {
+                spd.y = 0.45 * spd.y.signum()
+            }
             let mut touching_ground = false;
+            let mut against_wall = false;
             let moved_aabb = (collider.collider + spd);
             let mut smallest_nudge = Vec3Df::all_ones();
             for vertex in moved_aabb.get_ground_vertices() {
@@ -362,6 +373,9 @@ fn after_main_tick<'a>(turn:EntityTurn, id:usize, first_ent:&GameEntityVecRead<'
                 }
             }
             if smallest_nudge != Vec3Df::all_ones() {
+                if smallest_nudge.x != 0.0 || smallest_nudge.y != 0.0 && smallest_nudge.z > 0.0 {
+                    against_wall = true;
+                }
                 spd += smallest_nudge;
             }
            
@@ -384,9 +398,19 @@ fn after_main_tick<'a>(turn:EntityTurn, id:usize, first_ent:&GameEntityVecRead<'
                 },
                 None => ()
             }
+            if touching_ground != movement.touching_ground {
+                first_ent.tunnels.movement_out.send(MovementEvent::new(id, None, MovementEventVariant::UpdateTouchingGround(touching_ground)));
+            }
+            if against_wall != movement.against_wall {
+                first_ent.tunnels.movement_out.send(MovementEvent::new(id, None, MovementEventVariant::UpdateAgainstWall(against_wall)));
+            }
             first_ent.tunnels.movement_out.send(MovementEvent::new(id, None, MovementEventVariant::UpdatePos(movement_pos + spd)));
             first_ent.tunnels.movement_out.send(MovementEvent::new(id, None, MovementEventVariant::UpdateSpeed(spd)));
             first_ent.tunnels.collider_out.send(ColliderEvent::new(id, None, ColliderEventVariant::UpdateCollider(static_type.collider.init_aabb + (movement_pos + spd ))));
+
+
+            let planner = &first_ent.planner[id];
+            planner.update(id, 100, first_ent, second_ent, world);
             
         },
         _ => ()
