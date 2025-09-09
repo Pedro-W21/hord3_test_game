@@ -107,7 +107,10 @@ impl Plan {
                     actions.push(Action::new(id, started_at, ActionTimer::Delay(500), super::actions::ActionKind::MoveTowards(Vec3Df::new(pos.x as f32, pos.y as f32, pos.z as f32), path_data.tolerance), ActionSource::Planner));
                 }
                 let id = counter.get_next_id();
-                actions.push(Action::new(id, started_at, ActionTimer::Delay(500), super::actions::ActionKind::MoveTowards(path_data.end_pos, path_data.tolerance), ActionSource::Planner));
+                
+                actions.push(Action::new(id, started_at, ActionTimer::Delay(500), super::actions::ActionKind::StopAt(path_data.end_pos, 0.02, path_data.tolerance), ActionSource::Planner));
+                // dbg!(actions.clone());
+                // panic!("");
                 Some(actions)
             }
             else {
@@ -193,7 +196,7 @@ impl PathfindingData {
         let remaining_directions:Vec<&usize> = DIRECTIONS_INDICES.difference(&node.tried_directions).collect();
         if remaining_directions.len() > 0 {
             let mut best_dir = 0;
-            let mut best_dir_heuristic = 1000000;
+            let mut best_dir_heuristic = 10000000;
             for dir in remaining_directions {
                 let new_pos = node.position + DIRECTIONS[*dir];
                 if !self.explored_positions.contains(&new_pos) {

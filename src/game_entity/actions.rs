@@ -1,9 +1,9 @@
-use hord3::horde::{game_engine::{entity::{Component, ComponentEvent, StaticComponent}, multiplayer::Identify, world::WorldComputeHandler}, geometry::vec3d::Vec3Df};
+use hord3::horde::{game_engine::{entity::{Component, ComponentEvent, StaticComponent}, multiplayer::Identify, world::{WorldComputeHandler, WorldEvent}}, geometry::vec3d::Vec3Df};
 use to_from_bytes_derive::{FromBytes, ToBytes};
 
-use crate::{game_engine::{CoolGameEngineTID, CoolVoxel}, game_entity::{director::{Director, DirectorEvent, DirectorUpdate}, planner::{Plan, PlannerEvent, PlannerUpdate}, GameEntityVecRead, MovementEvent, MovementEventVariant}, game_map::{get_voxel_pos, GameMap, VoxelType}};
+use crate::{game_engine::{CoolGameEngineTID, CoolVoxel}, game_entity::{director::{Director, DirectorEvent, DirectorUpdate}, planner::{Plan, PlannerEvent, PlannerUpdate}, GameEntityVecRead, MovementEvent, MovementEventVariant}, game_map::{get_voxel_pos, GameMap, GameMapEvent, VoxelLight, VoxelType, WorldVoxelPos}};
 
-#[derive(Clone, ToBytes, FromBytes, PartialEq)]
+#[derive(Clone, ToBytes, FromBytes, PartialEq, Debug)]
 pub struct Action {
     id:usize,
     started_at:usize, // tick this was started at
@@ -11,7 +11,7 @@ pub struct Action {
     kind:ActionKind,
     source:ActionSource
 }
-#[derive(Clone, ToBytes, FromBytes, PartialEq)]
+#[derive(Clone, ToBytes, FromBytes, PartialEq, Debug)]
 pub enum ActionSource {
     Director,
     Planner
@@ -43,6 +43,8 @@ impl Action {
             ActionKind::MoveInDirection(_) => true,
             ActionKind::MoveTowards(position, tolerance) => world.world.get_voxel_at(get_voxel_pos(position)).is_some(),
             ActionKind::PathToPosition(position, tolerance) => world.world.get_voxel_at(get_voxel_pos(position)).and_then(|voxel| {if world.world.get_voxel_types()[voxel.voxel_type as usize].is_completely_empty() {Some(true)} else {None}}).is_some(),
+            ActionKind::ChangeVoxel(position, _) => world.world.get_chunk_at(world.world.get_chunk_pos_i(position)).is_some(),
+            ActionKind::StopAt(pos, _, _) => true,
         }
     }
     pub fn is_done<'a>(
@@ -58,6 +60,11 @@ impl Action {
             ActionKind::MoveInDirection(_) => false,
             ActionKind::MoveTowards(position, tolerance) => first_ent.movement[agent_id].pos.dist(&position) < tolerance,
             ActionKind::PathToPosition(position, tolerance) => first_ent.movement[agent_id].pos.dist(&position) < tolerance,
+            ActionKind::ChangeVoxel(_, _) => false,
+            ActionKind::StopAt(pos, speed_tolerance, pos_tolerance) => {
+                let movement = &first_ent.movement[agent_id];
+                movement.pos.dist(&pos) < pos_tolerance && movement.speed.norme() < speed_tolerance
+            }
         }
     }
     pub fn perform<'a>(
@@ -112,7 +119,7 @@ impl Action {
                 
             }
             else {
-                match self.kind {
+                match &self.kind {
                     ActionKind::Jump => {
                         let movement = &first_ent.movement[agent_id];
                         let stats = &first_ent.stats[agent_id];
@@ -153,6 +160,37 @@ impl Action {
                         first_ent.tunnels.actions_out.send(ActionsEvent::new(agent_id, None, ActionsUpdate::RemoveAction(self.id)));
                         ActionResult::InProgress
                     },
+                    ActionKind::StopAt(pos, spd_tolerance, pos_tolerance) => {
+                        
+                        let movement = &first_ent.movement[agent_id];
+                        let dist = movement.pos.dist(&pos);
+                        if dist >= *pos_tolerance {
+                            let mut direction = pos - movement.pos;
+                            let stats = &first_ent.stats[agent_id];
+                            direction.z = 0.0;
+                            direction = direction.normalise();
+                            if movement.against_wall {
+                                first_ent.tunnels.movement_out.send(MovementEvent::new(agent_id, None, MovementEventVariant::AddToSpeed(Vec3Df::new(direction.x * stats.ground_speed * 0.2, direction.y * stats.ground_speed * 0.2, stats.jump_height))));
+                            }
+                            else {
+                                first_ent.tunnels.movement_out.send(MovementEvent::new(agent_id, None, MovementEventVariant::AddToSpeed(Vec3Df::new(direction.x * stats.ground_speed * 0.2, direction.y * stats.ground_speed * 0.2, 0.0))));
+                            }
+                        }
+                        else {
+                            let mut direction = -movement.speed;
+                            let stats = &first_ent.stats[agent_id];
+                            direction.z = 0.0;
+                            direction = direction.normalise();
+                            first_ent.tunnels.movement_out.send(MovementEvent::new(agent_id, None, MovementEventVariant::AddToSpeed(Vec3Df::new(direction.x * stats.ground_speed * 0.5, direction.y * stats.ground_speed * 0.5, 0.0))));
+                        }
+
+                        ActionResult::InProgress
+                    }
+                    ActionKind::ChangeVoxel(voxel_pos, new_voxel) => {
+                        world.tunnels.send_event(GameMapEvent::UpdateVoxelAt(voxel_pos.clone(), new_voxel.clone()));
+                        first_ent.tunnels.actions_out.send(ActionsEvent::new(agent_id, None, ActionsUpdate::RemoveAction(self.id)));
+                        ActionResult::Done
+                    },
                     ActionKind::PathToPosition(position, tolerance) => ActionResult::Error(ActionError::ImpossibleAction),
                 }
             }
@@ -165,7 +203,7 @@ impl Action {
 
 }
 
-#[derive(Clone, ToBytes, FromBytes, PartialEq)]
+#[derive(Clone, ToBytes, FromBytes, PartialEq, Debug)]
 pub enum ActionTimer {
     Infinite,
     Delay(usize), // ticks
@@ -197,15 +235,17 @@ pub enum ActionError {
     StartedAfterDeadline
 }
 
-#[derive(Clone, ToBytes, FromBytes, PartialEq)]
+#[derive(Clone, ToBytes, FromBytes, PartialEq, Debug)]
 pub enum ActionKind {
     MoveInDirection(Vec3Df),
     Jump,
     PathToPosition(Vec3Df, f32),
-    MoveTowards(Vec3Df, f32)
+    MoveTowards(Vec3Df, f32),
+    StopAt(Vec3Df, f32, f32),
+    ChangeVoxel(WorldVoxelPos, CoolVoxel)
 }
 
-#[derive(Clone, ToBytes, FromBytes, PartialEq)]
+#[derive(Clone, ToBytes, FromBytes, PartialEq, Debug)]
 pub struct ActionCounter {
     latest_id:usize,
 }

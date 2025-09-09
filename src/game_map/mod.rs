@@ -1,6 +1,7 @@
 use std::{collections::{HashMap, VecDeque}, f32::consts::{PI, SQRT_2}, simd::{num::SimdFloat, Simd}, sync::{Arc, LazyLock}};
 
 use hord3::{defaults::default_rendering::vectorinator_binned::{meshes::{Mesh, MeshID, MeshInstance, MeshLOD, MeshLODS, MeshLODType, MeshTriangles, TrianglePoint}, triangles::{collux_f32_a_u8, collux_one_simd_to_u8_level, collux_u8_a_f32, collux_u8_tuple_to_f32_simd}, Vectorinator, VectorinatorWrite}, horde::{game_engine::{entity::Renderable, multiplayer::Identify, world::{World, WorldEvent}}, geometry::{rotation::{Orientation, Rotation}, vec3d::{Vec3D, Vec3Df}}, rendering::RenderingBackend}, tests::engine_derive_test::TestRB};
+use to_from_bytes_derive::{FromBytes, ToBytes};
 use vec_sparse_grid::{SetGrid, SetGridUpdate};
 
 
@@ -13,7 +14,7 @@ pub const VEC_LENGTH:usize = 4;
 pub const SET_CAPACITY:usize = 16;
 
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy,ToBytes,FromBytes, PartialEq, Eq, Hash, Debug)]
 pub struct VoxelLight {
     level:u8,
     r:u8,
@@ -246,7 +247,7 @@ impl<ID:Identify, V:Voxel> WorldEvent<GameMap<V>, ID> for GameMapEvent<V> {
     }
     fn apply_event(self, world:&mut GameMap<V>) {
         match self {
-            GameMapEvent::UpdateVoxelAt(pos, new_voxel) => {world.get_voxel_at_mut(pos).and_then(|vox| { *vox = new_voxel; None::<()>});},
+            GameMapEvent::UpdateVoxelAt(pos, new_voxel) => {world.get_voxel_at_mut(pos).and_then(|vox| { *vox = new_voxel; None::<()>}); world.modified_this_pos_signal_remesh(pos);},
             GameMapEvent::UpdateSetGrid(set_grid_update) => world.set_grid.apply_update::<VEC_LENGTH, SET_CAPACITY>(set_grid_update),
         }
     }

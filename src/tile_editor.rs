@@ -20,6 +20,7 @@ pub fn get_tile_voxels() -> Vec<CoolVoxelType> {
         CoolVoxelType::new(0, 0, VoxelLight::zero_light(), None, "Snow".to_string(), Some(PathBuf::from("textures/neige.png")), None),
         CoolVoxelType::new(0, 6, VoxelLight::zero_light(), None, "Water".to_string(), Some(PathBuf::from("textures/eau.png")), None),
         CoolVoxelType::new(0, 7, VoxelLight::zero_light(), None, "Deep Water".to_string(), Some(PathBuf::from("textures/eau_prof.png")), None),
+        CoolVoxelType::new(0, 8, VoxelLight::zero_light(), None, "Metal".to_string(), Some(PathBuf::from("textures/metal_0.png")), None),
         CoolVoxelType::new(0, 3, VoxelLight::zero_light(), None, "Text Test".to_string(), None, None),
     ]
 }

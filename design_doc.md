@@ -103,3 +103,35 @@ blocs piège :
    - "Director"
       - provides actions to perform
       - can be a player, an LLM, an expert system, nothing, a loop...
+      - LLM Director
+         - how to provide world information to an LLM ?
+            - grid of nearby tiles for sight, à la old roguelikes
+            - (x,y) grid where x are numbers and y are letters
+            - 3 grids provided, a layer below, the entity's layer, and a layer above (layers are numbered -1, 0, 1)
+            - characters used for world description :
+               - `,` : solid ground (can stand there)
+               - `.` : empty (would fall there)
+               - `%` : solid block on same level (can't go through that)
+               - `a` : other agent on same level
+               - `@` : agent
+            - describe who each other agent is by (coordinates) : name
+         - how can an LLM act ?
+            - actions as function calls :
+               - format : same as Proxima (needs to be evolved so it works better)
+               - possible actions :
+                  - SAY {text}
+                  - 
+         - how to connect LLMs to the engine ?
+            - agents have prompt response vecs and request ID generators
+            - extra_data contains a Sender<HordeProximaRequest>
+            - HordeProximaRequest :
+               - request id
+               - source entity (TID)
+               - Prompt
+            - another thread handles talking to Proxima
+               - that thread has the Receiver<HordeProximaRequest>
+               - has a Sender<HordeProximaResponse>
+                  - contains the TID and request ID, as well as the response
+            - the main thread (or any tick-synchronized thread) has the Receiver<HordeProximaResponse>
+               - each tick, receives and creates events filling the prompt vecs of the relevant entities
+

@@ -1,6 +1,7 @@
 #![feature(portable_simd)]
 #![feature(int_roundings)]
-use std::{collections::HashMap, f32::consts::PI, path::PathBuf, simd::Simd, sync::{atomic::{AtomicUsize, Ordering}, Arc, RwLock}, thread, time::{Duration, Instant}};
+#![feature(mpmc_channel)]
+use std::{collections::HashMap, f32::consts::PI, path::PathBuf, simd::Simd, sync::{atomic::{AtomicUsize, Ordering}, mpmc, Arc, RwLock}, thread, time::{Duration, Instant}};
 
 use game_entity::colliders::AABB;
 use cosmic_text::{Color, Font, Metrics};
@@ -14,11 +15,11 @@ use game_input_handler::GameInputHandler;
 use game_map::{get_f64_pos, get_float_pos, light_spreader::{LightPos, LightSpread}, ChunkDims, GameMap, VoxelLight};
 use game_tasks::{GameTask, GameTaskTaskHandler, GameUserEvent};
 use gui_elements::{list_choice::get_list_choice, number_config::get_number_config};
-use hord3::{defaults::{default_frontends::minifb_frontend::MiniFBWindow, default_rendering::vectorinator_binned::{meshes::{Mesh, MeshID, MeshLODS, MeshLODType}, rendering_spaces::ViewportData, shaders::NoOpShader, textures::{argb_to_rgb, rgb_to_argb, TextureSetID}, triangles::{color_u32_to_u8_simd, simd_rgb_to_argb}, Vectorinator}, default_ui::simple_ui::{SimpleUI, UIDimensions, UIElement, UIElementBackground, UIElementContent, UIElementID, UIEvent, UIUnit, UIUserAction, UIVector}}, horde::{frontend::{HordeWindowDimensions, WindowingHandler}, game_engine::{entity::Renderable, world::WorldHandler}, geometry::{plane::EquationPlane, rotation::{Orientation, Rotation}, vec3d::{Vec3D, Vec3Df}}, rendering::{camera::Camera, framebuffer::HordeColorFormat}, scheduler::{HordeScheduler, HordeTaskQueue, HordeTaskSequence, SequencedTask}, sound::{SoundRequest, WaveIdentification, WavePosition, WaveRequest, WaveSink, Waves}}};
+use hord3::{defaults::{default_frontends::minifb_frontend::MiniFBWindow, default_rendering::vectorinator_binned::{meshes::{Mesh, MeshID, MeshLODS, MeshLODType}, rendering_spaces::ViewportData, shaders::NoOpShader, textures::{argb_to_rgb, rgb_to_argb, TextureSetID}, triangles::{color_u32_to_u8_simd, simd_rgb_to_argb}, Vectorinator}, default_ui::simple_ui::{SimpleUI, UIDimensions, UIElement, UIElementBackground, UIElementContent, UIElementID, UIEvent, UIUnit, UIUserAction, UIVector}}, horde::{frontend::{HordeWindowDimensions, WindowingHandler}, game_engine::{entity::Renderable, world::{WorldComputeHandler, WorldHandler}}, geometry::{plane::EquationPlane, rotation::{Orientation, Rotation}, vec3d::{Vec3D, Vec3Df}}, rendering::{camera::Camera, framebuffer::HordeColorFormat}, scheduler::{HordeScheduler, HordeTaskQueue, HordeTaskSequence, SequencedTask}, sound::{SoundRequest, WaveIdentification, WavePosition, WaveRequest, WaveSink, Waves}}};
 use noise::{NoiseFn, Perlin, Seedable};
 use tile_editor::{get_tile_voxels, TileEditorData};
 
-use crate::{game_entity::{actions::{Action, ActionKind, ActionSource, ActionTimer, ActionsEvent, ActionsUpdate, StaticGameActions}, director::{Director, DirectorKind, StaticDirector}, planner::StaticPlanner}, game_map::get_voxel_pos};
+use crate::{game_entity::{actions::{Action, ActionKind, ActionSource, ActionTimer, ActionsEvent, ActionsUpdate, StaticGameActions}, director::{llm_director::LLMDirector, Director, DirectorKind, StaticDirector}, planner::StaticPlanner}, game_map::get_voxel_pos, proxima_link::ProximaLink};
 
 pub mod game_map;
 pub mod flat_game_map;
@@ -32,6 +33,7 @@ pub mod game_3d_models;
 pub mod game_tiles;
 pub mod cutscene;
 pub mod day_night;
+pub mod proxima_link;
 
 fn main() {
     let mut world = GameMap::new(100, ChunkDims::new(8, 8, 8), get_tile_voxels(), (255,255,255), 1);
@@ -72,7 +74,7 @@ fn main() {
     {
         world_clone.change_mesh_vec(10);
         world_clone.set_min_light_levels((50,50,50));
-        for i in 0..20 {
+        for i in 0..1 {
             let (x,y) = (fastrand::i32((start.x * 8)..(end.x * 8)), fastrand::i32((start.y * 8)..(end.y * 8)));
             let light_source = LightPos::new(Vec3D::new(x, y, ground_at[(x - (start.x * 8) + (y - (start.y * 8)) * ((end.y - start.y) * 8)) as usize] + 1), VoxelLight::slightly_less_random_light());
             let total_light_spread = LightSpread::calc_max_spread(&world_clone, light_source).get_all_spread();
@@ -91,9 +93,28 @@ fn main() {
         writer.new_sct(StaticGameEntity{planner:StaticPlanner{},director:StaticDirector {kind:DirectorKind::Nothing},actions:StaticGameActions {base_actions:Vec::with_capacity(8)},movement:StaticMovement{}, mesh_info:StaticMeshInfo{mesh_id:MeshID::Named("GREY_MESH".to_string()),mesh_data:grey_sphere_mesh()}, stats:StaticStats{}, collider:StaticCollider{init_aabb:AABB::new(-Vec3D::all_ones()*0.5, Vec3D::all_ones()*0.5)}});
 
 
-        for i in 0..1000 {
-            let pos = Vec3D::new((fastrand::f32() - 0.5) * 2.0 * 150.0, (fastrand::f32() - 0.5) * 2.0 * 150.0, 50.0);
-            writer.new_ent(NewGameEntity::new(Movement{against_wall:false, touching_ground:false,pos:pos, speed:Vec3D::zero(), orient:Orientation::zero(), rotat:Rotation::from_orientation(Orientation::zero())}, Stats {static_type_id:1, health:0, damage:0, stamina:0, ground_speed:0.2, jump_height:1.0}, Collider{team:0, collider:AABB::new(pos - Vec3D::all_ones() * 0.5, pos + Vec3D::all_ones() * 0.5)}, Director::new(DirectorKind::Nothing)));
+        let test_goals = vec![
+            //format!("Build a vertical staircase and get on top of it"),
+            //format!("Create a square structure on flat ground near you."),
+            /*vec![
+                format!("Meet up with all other agents in one place by agreeing on a place and moving there."),
+                format!("Build a large wall with other agents.")
+            ],*/
+            vec![
+                format!("Build a 5x5 flat square platform"),
+            ],
+            vec![
+                format!("Make a 3x3 square hole next to you without falling into it")
+            ]
+            //format!("Build a house with 4 walls, an entrance and a roof"),
+            /*vec![
+                format!("Find someone else in this world, and move to them. They may be far away.")
+            ]*/
+        ];
+
+        for i in 0..6 {
+            let pos = Vec3D::new((fastrand::f32() - 0.5) * 2.0 * 150.0, (fastrand::f32() - 0.5) * 2.0 * 150.0, 150.0);
+            writer.new_ent(NewGameEntity::new(Movement{against_wall:false, touching_ground:false,pos:pos, speed:Vec3D::zero(), orient:Orientation::zero(), rotat:Rotation::from_orientation(Orientation::zero())}, Stats {static_type_id:1, health:0, damage:0, stamina:0, ground_speed:0.2, jump_height:1.0}, Collider{team:0, collider:AABB::new(pos - Vec3D::all_ones() * 0.5, pos + Vec3D::all_ones() * 0.5)}, Director::new_with_random_name(DirectorKind::LLM(LLMDirector::new_with_goals(fastrand::choice(test_goals.iter()).unwrap().clone())))));
         }
 
         let positions = get_positions_of_air_written_text("Hord3".to_string(), Metrics::new(100.0, 80.0), "don't_care".to_string(), 1000, 1000, Color(rgb_to_argb((255,255,255))), (0,0), Vec3D::new(0.0, -1.0, 0.0), Vec3D::new(0.01, 0.0, -1.0), Vec3D::new(-155.0, 155.0, 180.0));
@@ -101,6 +122,11 @@ fn main() {
             //writer.new_ent(NewGameEntity::new(Movement{pos:pos, speed:Vec3D::new(1.0, 0.0, 0.0), orient:Orientation::zero(), rotat:Rotation::from_orientation(Orientation::zero())}, Stats {static_type_id:8, health:0, damage:0, stamina:0}, Collider{team:0, collider:AABB::new(pos - Vec3D::all_ones() * 0.5, pos + Vec3D::all_ones() * 0.5)}));
         }
     }
+
+    let (payload_sender, response_receiver) = match ProximaLink::initialize(String::from("HORDE"), String::from("HORDE"), String::from("http://localhost:8085")) {
+        Ok((s, r)) => (s, r),
+        Err(_) => (mpmc::channel().0, mpmc::channel().1)
+    };
     
     let entity_vec_2 = GameEntityVec::new(1000);
     
@@ -124,7 +150,8 @@ fn main() {
     let vectorinator = Vectorinator::new(framebuf.clone(), shader);
     let (waves, waves_handler, stream) = Waves::new(Vec::new(), 10);
     let world_handler = WorldHandler::new(world);
-    let engine = CoolGameEngineBase::new(entity_vec, entity_vec_2, world_handler.clone(), Arc::new(vectorinator.clone()), ExtraData { tick: Arc::new(AtomicUsize::new(0)), waves:waves_handler.clone(), current_render_data:Arc::new(RwLock::new((Camera::empty(), viewport_data.clone())))});
+    
+    let engine = CoolGameEngineBase::new(entity_vec, entity_vec_2, world_handler.clone(), Arc::new(vectorinator.clone()), ExtraData {payload_sender, tick: Arc::new(AtomicUsize::new(0)), waves:waves_handler.clone(), current_render_data:Arc::new(RwLock::new((Camera::empty(), viewport_data.clone())))});
     waves_handler.send_gec(engine.clone());
     let mouse = windowing.get_mouse_state();
     let mouse2 = windowing.get_mouse_state();
@@ -218,6 +245,16 @@ fn main() {
                 )
             ]
         );
+        writer.textures.add_set_with_many_textures(
+            "Testing_Texture_8".to_string(),
+            vec![
+                (
+                    "metal_0.png".to_string(),
+                    1,
+                    None
+                )
+            ]
+        );
         writer.textures.add_generated_texture_set("Testing_text_texture".to_string(), get_written_texture_buffer("TEST\nLOL".to_string(), Metrics::new(300.0, 310.0), "don't_care".to_string(), vec![rgb_to_argb((0,200,0)) ; 1000*1000], 1000, 1000, Color(rgb_to_argb((255,255,255))), (0,0)), 1000, 1000);
         writer.textures.add_generated_texture_set("FULLRED".to_string(), get_written_texture_buffer("".to_string(), Metrics::new(300.0, 310.0), "don't_care".to_string(), vec![rgb_to_argb((255,0,0)) ; 1000*1000], 1000, 1000, Color(rgb_to_argb((255,255,255))), (0,0)), 1000, 1000);
         writer.textures.add_generated_texture_set("FULLGREEN".to_string(), get_written_texture_buffer("".to_string(), Metrics::new(300.0, 310.0), "don't_care".to_string(), vec![rgb_to_argb((0,255,0)) ; 1000*1000], 1000, 1000, Color(rgb_to_argb((255,255,255))), (0,0)), 1000, 1000);
@@ -245,7 +282,9 @@ fn main() {
         SequencedTask::StartTask(GameTask::PrepareRendering),
         SequencedTask::WaitFor(GameTask::PrepareRendering),
         SequencedTask::StartSequence(1),
+        SequencedTask::StartTask(GameTask::ApplyEvents),
         SequencedTask::StartTask(GameTask::UpdateSoundPositions),
+        SequencedTask::WaitFor(GameTask::ApplyEvents),
         SequencedTask::StartTask(GameTask::Main),
         SequencedTask::WaitFor(GameTask::Main),
         SequencedTask::WaitFor(GameTask::UpdateSoundPositions),
@@ -336,7 +375,7 @@ fn main() {
         world_clone.make_meshes_invisible(&mut writer);
     }   
     // let mut cutscene = get_real_demo_cutscene(&viewport_data);
-    for i in 0..7500 {
+    for i in 0..75000 {
         //println!("{i}");
 
         let mut start = Instant::now();
@@ -358,7 +397,7 @@ fn main() {
             *vectorinator.shader_data.fog_color.write().unwrap() = rgb_to_argb(new_fog_col);
             let new_camera =input_handler.get_new_camera();
             *writer.camera = new_camera.clone();//(i as f32 / 500.0) * PI/2.0));
-            if i > 400 {
+            /*if i > 400 {
                 let mut reader = engine.entity_1.get_read();
 
                 let ent = fastrand::usize(0..reader.actions.len());
@@ -369,7 +408,7 @@ fn main() {
                 let next_action = counter.get_next_id();
                 reader.tunnels.actions_out.send(ActionsEvent::new(ent, None, ActionsUpdate::AddAction(Action::new(next_action, engine.extra_data.tick.load(Ordering::Relaxed), ActionTimer::Delay(500), ActionKind::PathToPosition(Vec3Df::new(target_pos.x as f32, target_pos.y as f32, target_pos.z as f32), 0.7), ActionSource::Director))));
                 reader.tunnels.actions_out.send(ActionsEvent::new(ent, None, ActionsUpdate::UpdateCounter(counter)));
-            }
+            }*/
             // dbg!(new_camera.clone());
             engine.extra_data.current_render_data.write().unwrap().0 = new_camera.clone();
             engine.extra_data.tick.fetch_add(1, Ordering::Relaxed);
@@ -377,7 +416,19 @@ fn main() {
             /*thread::sleep(Duration::from_millis(10));*/
             new_camera
         };
-
+        {
+            let first_ent = engine.entity_1.get_read();
+            let second_ent = engine.entity_2.get_read();
+            let world = WorldComputeHandler::from_world_handler(&engine.world);
+            loop {
+                match response_receiver.try_recv() {
+                    Ok(response) => response.apply(&first_ent, &second_ent, &world),
+                    Err(_) => break
+                }
+            }
+        }
+        
+        
         tile_editor.cam = new_camera;
         match user_events.try_recv() {
             Ok(evt) => {

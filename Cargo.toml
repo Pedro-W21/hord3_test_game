@@ -1,7 +1,7 @@
 [package]
 name = "hord3_test_game"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 hord3 = {git = "https://github.com/Pedro-W21/hord3.git"}
@@ -10,6 +10,11 @@ engine_derive = { git = "https://github.com/Pedro-W21/hord3.git" }
 task_derive = { git = "https://github.com/Pedro-W21/hord3.git" }
 to_from_bytes = { git = "https://github.com/Pedro-W21/hord3.git" }
 to_from_bytes_derive = { git = "https://github.com/Pedro-W21/hord3.git" }
+proxima_backend = { git = "https://github.com/Pedro-W21/proxima_backend" }
+reqwest = { version = "0.12", features = ["json", "blocking"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+html_parser = "0.7.0"
 
 cosmic-text = "0.12.1"
 crossbeam = "0.8.4"

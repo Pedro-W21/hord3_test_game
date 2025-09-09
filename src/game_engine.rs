@@ -1,26 +1,27 @@
-use std::{path::PathBuf, sync::{atomic::{AtomicUsize, Ordering}, Arc, RwLock}};
+use std::{path::PathBuf, sync::{atomic::{AtomicUsize, Ordering}, mpmc::Sender, Arc, RwLock}};
 
 use engine_derive::GameEngine;
 use hord3::{defaults::default_rendering::vectorinator_binned::{rendering_spaces::ViewportData, shaders::NoOpShader, Vectorinator}, horde::{game_engine::{engine::{GameEngine, MovingObjectID}, entity::{Entity, EntityVec, MultiplayerEntity, Renderable}, multiplayer::Identify, world::{WorldComputeHandler, WorldHandler, WorldOutHandler, WorldWriteHandler}}, geometry::vec3d::{Vec3D, Vec3Df}, rendering::camera::Camera, scheduler::IndividualTask, sound::{ARWWaves, WavesHandler}}};
+use to_from_bytes_derive::{FromBytes, ToBytes};
 
-use crate::{cutscene::{game_shader::GameShader, reverse_camera_coords::reverse_from_raster_to_worldpos}, game_entity::{actions::{ActionsEvent, ActionsUpdate}, colliders::AABB, Collider, ColliderEvent, ColliderEventVariant, GameEntity, GameEntityVecRead, GameEntityVecWrite, MovementEvent, MovementEventVariant}, game_map::{get_voxel_pos, GameMap, GameMapEvent, Voxel, VoxelLight, VoxelModel, VoxelType}};
+use crate::{cutscene::{game_shader::GameShader, reverse_camera_coords::reverse_from_raster_to_worldpos}, game_entity::{actions::{ActionsEvent, ActionsUpdate}, colliders::AABB, Collider, ColliderEvent, ColliderEventVariant, GameEntity, GameEntityVecRead, GameEntityVecWrite, MovementEvent, MovementEventVariant}, game_map::{get_voxel_pos, GameMap, GameMapEvent, Voxel, VoxelLight, VoxelModel, VoxelType}, proxima_link::HordeProximaAIRequest};
 
 
-#[derive(Clone)]
+#[derive(Clone, FromBytes, ToBytes, PartialEq, Debug)]
 pub struct CoolVoxel {
     pub voxel_type:u16,
     pub orient:u8,
     pub light:VoxelLight,
-    pub extra_voxel_data:Option<Box<Vec<ExtraVoxelData>>>,
+    pub extra_voxel_data:Option<Vec<ExtraVoxelData>>,
 }
-
-#[derive(Clone)]
 
 /// A passage can be
 /// - flood-opened (all adjacent same passage)
 /// - tied to a key
 /// - a corridor opening (may be pre-opened by generation)
 /// - an explicit point of entry into the room (only link to exits from others (corridor=false && entry=false) or corridors)
+
+#[derive(Clone, FromBytes, ToBytes, PartialEq, Debug)]
 pub struct PassageData {
     open_with_adjacent:bool,
     key_id:u16,
@@ -33,26 +34,26 @@ pub struct PassageData {
 /// - does a trap action at a position in a direction
 /// - can have a cooldown, or be single use
 /// - can activate with other adjacent traps or not
-#[derive(Clone)]
+#[derive(Clone, FromBytes, ToBytes, PartialEq, Debug)]
 pub struct TrapData {
     activation_type:ActivationType,
     action:TrapAction,
     cooldown:TrapCooldown,
     activate_with_all_adjacent:bool
 }
-#[derive(Clone)]
+#[derive(Clone, FromBytes, ToBytes, PartialEq, Debug)]
 pub enum TrapCooldown {
     SingleUse{activated:bool},
     Ticks{max:usize, current:usize}
 }
-#[derive(Clone)]
+#[derive(Clone, FromBytes, ToBytes, PartialEq, Debug)]
 pub enum TrapAction {
-    Projectile {},
+    Projectile,
     StraightDamage {hitbox:AABB},
-    Effect {}
+    Effect
 }
 
-#[derive(Clone)]
+#[derive(Clone, FromBytes, ToBytes, PartialEq, Debug)]
 pub enum ActivationType {
     AnyEntityContact,
     ProjectileContact,
@@ -62,7 +63,7 @@ pub enum ActivationType {
     Periodic(usize)
 }
 
-#[derive(Clone)]
+#[derive(Clone, FromBytes, ToBytes, PartialEq, Debug)]
 pub enum ExtraVoxelData {
     IsPassage(PassageData),
     IsLightSource(VoxelLight),
@@ -71,7 +72,7 @@ pub enum ExtraVoxelData {
 }
 
 impl CoolVoxel {
-    pub fn new(voxel_type:u16, orient:u8, light:VoxelLight, extra_voxel_data:Option<Box<Vec<ExtraVoxelData>>>) -> Self {
+    pub fn new(voxel_type:u16, orient:u8, light:VoxelLight, extra_voxel_data:Option<Vec<ExtraVoxelData>>) -> Self {
         Self { voxel_type, orient, light, extra_voxel_data }
     }
 }
@@ -234,6 +235,8 @@ fn compute_tick<'a>(turn:EntityTurn, id:usize, first_ent:&GameEntityVecRead<'a, 
             let actions = &first_ent.actions[id];
             let mut counter = actions.get_counter().clone();
             actions.perform(id, first_ent, second_ent, world, &mut counter, extra_data.tick.load(Ordering::Relaxed));
+            first_ent.director[id].do_tick(id, first_ent, second_ent, world, extra_data.tick.load(Ordering::Relaxed), &mut counter);
+
             first_ent.tunnels.actions_out.send(ActionsEvent::new(id, None, ActionsUpdate::UpdateCounter(counter)));
         },
         EntityTurn::entity_2 => {
@@ -407,11 +410,12 @@ fn after_main_tick<'a>(turn:EntityTurn, id:usize, first_ent:&GameEntityVecRead<'
             first_ent.tunnels.movement_out.send(MovementEvent::new(id, None, MovementEventVariant::UpdatePos(movement_pos + spd)));
             first_ent.tunnels.movement_out.send(MovementEvent::new(id, None, MovementEventVariant::UpdateSpeed(spd)));
             first_ent.tunnels.collider_out.send(ColliderEvent::new(id, None, ColliderEventVariant::UpdateCollider(static_type.collider.init_aabb + (movement_pos + spd ))));
-
+            
 
             let planner = &first_ent.planner[id];
             planner.update(id, 100, first_ent, second_ent, world);
             
+            first_ent.director[id].do_after_tick(id, first_ent, second_ent, world, &extra_data, extra_data.tick.load(Ordering::Relaxed));
         },
         _ => ()
     }
@@ -421,7 +425,8 @@ fn after_main_tick<'a>(turn:EntityTurn, id:usize, first_ent:&GameEntityVecRead<'
 pub struct ExtraData {
     pub tick:Arc<AtomicUsize>,
     pub waves:WavesHandler<CoolGameEngine>,
-    pub current_render_data:Arc<RwLock<(Camera, ViewportData)>>
+    pub current_render_data:Arc<RwLock<(Camera, ViewportData)>>,
+    pub payload_sender:Sender<HordeProximaAIRequest>,
 }
 
 #[derive(GameEngine, Clone)]
