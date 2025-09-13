@@ -125,7 +125,7 @@ fn main() {
             ]*/
         ];
 
-        for i in 0..2 {
+        for i in 0..10 {
             let pos = Vec3D::new((fastrand::f32() - 0.5) * 2.0 * 150.0, (fastrand::f32() - 0.5) * 2.0 * 150.0, 150.0);
             writer.new_ent(NewGameEntity::new(Movement{against_wall:false, touching_ground:false,pos:pos, speed:Vec3D::zero(), orient:Orientation::zero(), rotat:Rotation::from_orientation(Orientation::zero())}, Stats {static_type_id:1, health:0, damage:0, stamina:0, ground_speed:0.2, jump_height:1.0}, Collider{team:0, collider:AABB::new(pos - Vec3D::all_ones() * 0.5, pos + Vec3D::all_ones() * 0.5)}, Director::new_with_random_name(DirectorKind::LLM(LLMDirector::new_with_goals(fastrand::choice(test_goals.iter()).unwrap().clone())))));
             //writer.new_ent(NewGameEntity::new(Movement{against_wall:false, touching_ground:false,pos:pos, speed:Vec3D::zero(), orient:Orientation::zero(), rotat:Rotation::from_orientation(Orientation::zero())}, Stats {static_type_id:1, health:0, damage:0, stamina:0, ground_speed:0.2, jump_height:1.0}, Collider{team:0, collider:AABB::new(pos - Vec3D::all_ones() * 0.5, pos + Vec3D::all_ones() * 0.5)}, Director::new_with_random_name(DirectorKind::LLM(LLMDirector::new_with_goals(test_goals[i].clone())))));
@@ -411,7 +411,7 @@ fn main() {
             *vectorinator.shader_data.fog_color.write().unwrap() = rgb_to_argb(new_fog_col);
             let new_camera =input_handler.get_new_camera();
             *writer.camera = new_camera.clone();//(i as f32 / 500.0) * PI/2.0));
-            /*if i > 400 {
+            if i > 400 {
                 let mut reader = engine.entity_1.get_read();
 
                 let ent = fastrand::usize(0..reader.actions.len());
@@ -422,7 +422,7 @@ fn main() {
                 let next_action = counter.get_next_id();
                 reader.tunnels.actions_out.send(ActionsEvent::new(ent, None, ActionsUpdate::AddAction(Action::new(next_action, engine.extra_data.tick.load(Ordering::Relaxed), ActionTimer::Delay(500), ActionKind::PathToPosition(Vec3Df::new(target_pos.x as f32, target_pos.y as f32, target_pos.z as f32), 0.7), ActionSource::Director))));
                 reader.tunnels.actions_out.send(ActionsEvent::new(ent, None, ActionsUpdate::UpdateCounter(counter)));
-            }*/
+            }
             // dbg!(new_camera.clone());
             engine.extra_data.current_render_data.write().unwrap().0 = new_camera.clone();
             engine.extra_data.tick.fetch_add(1, Ordering::Relaxed);

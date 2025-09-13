@@ -1,4 +1,4 @@
-use std::{collections::{HashMap, HashSet}, sync::{LazyLock, OnceLock}};
+use std::{collections::{HashMap, HashSet, VecDeque}, sync::{LazyLock, OnceLock}};
 
 use hord3::horde::{game_engine::{entity::{Component, ComponentEvent, StaticComponent}, multiplayer::Identify, world::WorldComputeHandler}, geometry::vec3d::{Vec3D, Vec3Df}};
 use to_from_bytes_derive::{FromBytes, ToBytes};
@@ -54,11 +54,14 @@ impl Planner {
             if !plan.finished_compute() {
                 match &plan.plan_data {
                     PlanData::Pathfinding(path) => {
-                        let mut new_path = path.clone();
-                        new_path.reiterate(agent_id, extra_possible_iterations, first_ent, second_ent, world);
-                        let mut new_plan = plan.clone();
-                        new_plan.plan_data = PlanData::Pathfinding(new_path);
-                        first_ent.tunnels.planner_out.send(PlannerEvent::new(agent_id, None, PlannerUpdate::UpdatePlan(new_plan)));
+                        if path.iterations < 1000000 {
+                            let mut new_path = path.clone();
+                            new_path.reiterate(agent_id, extra_possible_iterations, first_ent, second_ent, world);
+                            let mut new_plan = plan.clone();
+                            new_plan.plan_data = PlanData::Pathfinding(new_path);
+                            first_ent.tunnels.planner_out.send(PlannerEvent::new(agent_id, None, PlannerUpdate::UpdatePlan(new_plan)));
+                        }
+                        
                     }
                 }
             }
@@ -124,6 +127,8 @@ impl Plan {
 pub struct PathfindingData {
     nodes:Vec<PathNode>,
     explored_positions:HashSet<Vec3D<i32>>,
+    nodes_map:HashMap<Vec3D<i32>, usize>,
+    open_set:VecDeque<usize>,
     start_pos:Vec3Df,
     tolerance:f32,
     end_pos:Vec3Df,
@@ -133,8 +138,8 @@ pub struct PathfindingData {
     found_path:Option<Vec<usize>>
 }
 
-pub fn default_heuristic(test:Vec3D<i32>, target:Vec3D<i32>) -> i32 {
-    (test.x - target.x).pow(2) + (test.y - target.y).pow(2) + (test.z - target.z).pow(2)
+pub fn default_heuristic(test:Vec3D<f64>, target:Vec3D<f64>) -> f64 {
+    ((test.x - target.x).powi(2) + (test.y - target.y).powi(2) + (test.z - target.z).powi(2)).sqrt()
 }
 
 impl PathfindingData {
@@ -151,6 +156,8 @@ impl PathfindingData {
         let mut data = PathfindingData {
             nodes:Vec::with_capacity(256),
             explored_positions:HashSet::with_capacity(512),
+            nodes_map:HashMap::with_capacity(512),
+            open_set:VecDeque::with_capacity(512),
             iterations:0,
             start_pos,
             tolerance,
@@ -161,7 +168,10 @@ impl PathfindingData {
         };
         let start_pos_vox = get_voxel_pos(start_pos);
         data.explored_positions.insert(start_pos_vox);
-        data.nodes.push(PathNode { parent: None, position: start_pos_vox, tried_directions: HashSet::with_capacity(DIRECTIONS.len()) });
+        let heuristic = start_pos.dist(&end_pos) as f64;
+        data.nodes_map.insert(start_pos_vox, 0);
+        data.nodes.push(PathNode { parent: None, position: start_pos_vox, movement_cost:0.0, heuristic, total_cost:heuristic });
+        data.open_set.push_back(0);
 
         while data.iterations < max_iterations && data.found_path.is_none() {
             data.pathfinding_iteration(agent_id, max_iterations, first_ent, second_ent, world);
@@ -183,6 +193,33 @@ impl PathfindingData {
             self.pathfinding_iteration(agent_id, new_max, first_ent, second_ent, world);
         }
     }
+    fn add_to_prio_queue(&mut self, node_id:usize, f_cost:f64) {
+        let mut a = 0;
+        let mut b = self.open_set.len();
+        let mut middle = (a + b) / 2;
+        if self.open_set.len() > 0 {
+            loop {
+                if self.nodes[self.open_set[middle]].total_cost > f_cost {
+                    b = middle;
+                }
+                else {
+                    a = middle;
+                }
+                let new_middle = (a + b) / 2;
+                if new_middle == middle {
+                    break;
+                }
+                middle = new_middle;
+            }
+            if self.open_set[middle] != node_id {
+                self.open_set.insert(middle, node_id);
+            }
+        }
+        else {
+            self.open_set.insert(middle, node_id);
+        }
+        
+    }
     fn pathfinding_iteration<'a>(
         &mut self,
         agent_id:usize,
@@ -191,38 +228,53 @@ impl PathfindingData {
         second_ent:&GameEntityVecRead<'a, CoolGameEngineTID>,
         world:&WorldComputeHandler<GameMap<CoolVoxel>, CoolGameEngineTID>
     ) {
-        let node = &mut self.nodes[self.last_node];
+        //println!("{} {} {}", self.iterations, self.nodes.len(), self.nodes_map.len());
         self.iterations += 1;
-        let remaining_directions:Vec<&usize> = DIRECTIONS_INDICES.difference(&node.tried_directions).collect();
-        if remaining_directions.len() > 0 {
-            let mut best_dir = 0;
-            let mut best_dir_heuristic = 10000000;
-            for dir in remaining_directions {
-                let new_pos = node.position + DIRECTIONS[*dir];
-                if !self.explored_positions.contains(&new_pos) {
-                    let heuristic = default_heuristic(new_pos, self.end_pos_i);
-                    if heuristic < best_dir_heuristic {
-                        best_dir = *dir;
-                        best_dir_heuristic = heuristic;
+        if let Some(best_node_id) = self.open_set.remove(0) {
+            let node_cost = self.nodes[best_node_id].movement_cost + 1.0;
+            for dir in DIRECTIONS {
+                let new_pos = self.nodes[best_node_id].position + dir;
+                if true || !self.explored_positions.contains(&new_pos) { //explored_positions breaks making more efficient paths over existing ones
+                    let heuristic = default_heuristic(Vec3D::<f64>::new(new_pos.x as f64, new_pos.y as f64, new_pos.z as f64), Vec3D::<f64>::new(self.end_pos.x as f64, self.end_pos.y as f64, self.end_pos.z as f64));
+                    if !world.world.is_voxel_solid(new_pos) && world.world.is_voxel_solid(new_pos + Vec3D::new(0, 0, -1)) {
+                        match self.nodes_map.get(&new_pos) {
+                            Some(node_id) => {
+                                let mut add = None;
+                                {
+                                    let node = &mut self.nodes[*node_id];
+                                    if node_cost < node.movement_cost {
+                                        add = Some(node.total_cost);
+                                        node.heuristic = heuristic;
+                                        node.movement_cost = node_cost;
+                                        node.total_cost = heuristic + node_cost;
+                                        node.parent = Some(best_node_id);
+                                    }
+                                }
+                                
+                                if let Some(f_cost) = add {
+
+                                    self.add_to_prio_queue(*node_id, f_cost);
+                                }
+                            },
+                            None => {
+                                let new_last = self.nodes.len();
+                                let f_cost = node_cost + heuristic;
+                                self.nodes.push(PathNode { parent: Some(best_node_id), position: new_pos, movement_cost:node_cost, heuristic:heuristic, total_cost:f_cost });
+                                self.last_node = new_last;
+                                self.nodes_map.insert(new_pos, new_last);
+                                self.add_to_prio_queue(new_last, f_cost);
+                            }
+                        }
+                        if heuristic <= 1.0 {
+                            self.create_path();
+                        }
                     }
                 }
-                
-            }
-            let best_pos = node.position + DIRECTIONS[best_dir];
-            node.tried_directions.insert(best_dir);
-            self.explored_positions.insert(best_pos);
-            if !world.world.is_voxel_solid(best_pos) && world.world.is_voxel_solid(best_pos + Vec3D::new(0, 0, -1)) {
-                let new_last = self.nodes.len();
-                self.nodes.push(PathNode { parent: Some(self.last_node), position: best_pos, tried_directions: HashSet::with_capacity(12) });
-                self.last_node = new_last;
-                if best_dir_heuristic == 0 {
-                    self.create_path();
-                }
+                self.explored_positions.insert(new_pos);
             }
         }
-        else if let Some(parent) = node.parent {
-            self.last_node = parent;
-        }
+        
+        
     }
     fn create_path(&mut self) {
         let mut path = Vec::with_capacity(40);
@@ -230,6 +282,7 @@ impl PathfindingData {
         let mut node = &mut self.nodes[self.last_node];
         while let Some(parent) = node.parent {
             path.push(parent);
+            //dbg!(node.position);
             node = &mut self.nodes[parent];
         }
         path.reverse();
@@ -240,7 +293,9 @@ impl PathfindingData {
 pub struct PathNode {
     parent:Option<usize>,
     position:Vec3D<i32>,
-    tried_directions:HashSet<usize>
+    movement_cost:f64,
+    heuristic:f64,
+    total_cost:f64,
 }
 #[derive(Clone, ToBytes, FromBytes, PartialEq)]
 pub enum PlanData {
