@@ -230,7 +230,7 @@ impl PathfindingData {
     ) {
         //println!("{} {} {}", self.iterations, self.nodes.len(), self.nodes_map.len());
         self.iterations += 1;
-        if let Some(best_node_id) = self.open_set.remove(0) {
+        if let Some(best_node_id) = self.open_set.pop_front() {
             let node_cost = self.nodes[best_node_id].movement_cost + 1.0;
             for dir in DIRECTIONS {
                 let new_pos = self.nodes[best_node_id].position + dir;
