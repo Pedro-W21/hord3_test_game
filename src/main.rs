@@ -96,25 +96,39 @@ fn main() {
         let test_goals = vec![
             //format!("Build a vertical staircase and get on top of it"),
             //format!("Create a square structure on flat ground near you."),
-            /*vec![
+            vec![
                 format!("Meet up with all other agents in one place by agreeing on a place and moving there."),
                 format!("Build a large wall with other agents.")
-            ],*/
-            vec![
-                format!("Build a 5x5 flat square platform"),
             ],
-            vec![
-                format!("Make a 3x3 square hole next to you without falling into it")
-            ]
+            /*vec![
+                format!("Build a 5x5 flat square platform"),
+            ],*/
+            /*vec![
+                format!("Make a 3x3 square hole that is 4 voxels deep next to you without falling into it")
+            ]*/
+            /*vec![
+                format!("Find another agent, move towards them and dig a hole beneath them.")
+            ],*/
+            /*vec![
+                format!("Create a house with 4 walls and a ceiling. The house must have at least a 3x3 empty space inside.")
+            ],*/
+            /*vec![
+                format!("Create a staircase reaching at least 10 voxels tall (on the z axis) from your position. Keep in mind that a staircase is diagonal."),
+                format!("Get on top of the staircase you created")
+            ]*/
+            /*vec![
+                format!("Meet up with other agents and build a house together with enough space inside to fit everyone")
+            ]*/
             //format!("Build a house with 4 walls, an entrance and a roof"),
             /*vec![
                 format!("Find someone else in this world, and move to them. They may be far away.")
             ]*/
         ];
 
-        for i in 0..6 {
+        for i in 0..2 {
             let pos = Vec3D::new((fastrand::f32() - 0.5) * 2.0 * 150.0, (fastrand::f32() - 0.5) * 2.0 * 150.0, 150.0);
             writer.new_ent(NewGameEntity::new(Movement{against_wall:false, touching_ground:false,pos:pos, speed:Vec3D::zero(), orient:Orientation::zero(), rotat:Rotation::from_orientation(Orientation::zero())}, Stats {static_type_id:1, health:0, damage:0, stamina:0, ground_speed:0.2, jump_height:1.0}, Collider{team:0, collider:AABB::new(pos - Vec3D::all_ones() * 0.5, pos + Vec3D::all_ones() * 0.5)}, Director::new_with_random_name(DirectorKind::LLM(LLMDirector::new_with_goals(fastrand::choice(test_goals.iter()).unwrap().clone())))));
+            //writer.new_ent(NewGameEntity::new(Movement{against_wall:false, touching_ground:false,pos:pos, speed:Vec3D::zero(), orient:Orientation::zero(), rotat:Rotation::from_orientation(Orientation::zero())}, Stats {static_type_id:1, health:0, damage:0, stamina:0, ground_speed:0.2, jump_height:1.0}, Collider{team:0, collider:AABB::new(pos - Vec3D::all_ones() * 0.5, pos + Vec3D::all_ones() * 0.5)}, Director::new_with_random_name(DirectorKind::LLM(LLMDirector::new_with_goals(test_goals[i].clone())))));
         }
 
         let positions = get_positions_of_air_written_text("Hord3".to_string(), Metrics::new(100.0, 80.0), "don't_care".to_string(), 1000, 1000, Color(rgb_to_argb((255,255,255))), (0,0), Vec3D::new(0.0, -1.0, 0.0), Vec3D::new(0.01, 0.0, -1.0), Vec3D::new(-155.0, 155.0, 180.0));

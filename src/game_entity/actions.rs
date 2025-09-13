@@ -21,6 +21,9 @@ impl Action {
     pub fn new(id:usize, started_at:usize, timer:ActionTimer, kind:ActionKind, source:ActionSource) -> Self {
         Self { id, started_at, timer, kind, source }
     }
+    pub fn get_kind(&self) -> &ActionKind {
+        &self.kind
+    }
     pub fn get_id(&self) -> usize {
         self.id
     }
