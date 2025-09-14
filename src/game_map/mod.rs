@@ -278,105 +278,24 @@ impl<'a, V:Voxel> Renderable<VectorinatorWrite<'a>> for GameMap<V> {
                 let around = self.get_chunks_around(pos);
                 let chunk = self.chunks.get(&pos).unwrap();
                 if chunk.mesh_updated == false || self.forced_rerender {
-                    let mut x = Vec::with_capacity(600);
-                    let mut y = Vec::with_capacity(600);
-                    let mut z = Vec::with_capacity(600);
-                    let mut triangles = MeshTriangles::with_capacity(600);
-                    let mut lod = MeshLOD::new(x, y, z, triangles);
-                    for x in 0..self.dims.chunk_length_i {
-                        for y in 0..self.dims.chunk_width_i {
-                            for z in 0..self.dims.chunk_height_i {
-
-                                let voxel = chunk.get_at_local(Vec3D::new(x, y, z), &self.dims).unwrap();
-                                if !&self.voxel_types[voxel.voxel_id()].is_completely_empty() {
-                                    let empty_dirs = chunk.get_empty_directions_local(Vec3D::new(x, y, z), &self.dims, around, &self.voxel_types);
-                                    let lights = chunk.get_lights_local(Vec3D::new(x, y, z), &self.dims, around);
-                                    //dbg!(Vec3D::new(x, y, z));
-                                    for (i, mask) in DIR_MASK.iter().enumerate() {
-                                        /*if empty_dirs != 0 {
-                                            dbg!(empty_dirs);
-                                        }*/
-                                        if empty_dirs & mask  == *mask { //if a direction is empty (hint:it's a me, Mario)
-                                            let mut points = TRIS_INDICES_UVS.0[i];
-                                            let indices = TRIS_INDICES_UVS.1;
-                                            let uvs = TRIS_INDICES_UVS.2;
-                                            let start_index = lod.x.len();
-                                            let mut level = (lights[i].level.max(50) as f32) / 255.0;
-                                            let mut converted_collux = collux_u8_a_f32((lights[i].r, lights[i].g, lights[i].b));
-                                            let mut finished_collux = collux_f32_a_u8((converted_collux.0 * level, converted_collux.1 * level, converted_collux.2 * level));
-                                            finished_collux = (finished_collux.0.max(self.min_light_levels.0), finished_collux.1.max(self.min_light_levels.1), finished_collux.2.max(self.min_light_levels.2));
-                                            points = points + Vec3D::new(x as f32, y as f32, z as f32); 
-                                            lod.add_points(&points);
-                                            lod.triangles.add_triangle(
-                                                TrianglePoint::new(
-                                                    indices[0] + start_index,
-                                                    uvs[indices[0]].0,
-                                                    uvs[indices[0]].1,
-                                                    finished_collux.0,
-                                                    finished_collux.1,
-                                                    finished_collux.2
-                                                ),
-                                                TrianglePoint::new(
-                                                    indices[1] + start_index,
-                                                    uvs[indices[1]].0,
-                                                    uvs[indices[1]].1,
-                                                    finished_collux.0,
-                                                    finished_collux.1,
-                                                    finished_collux.2
-                                                ),
-                                                TrianglePoint::new(
-                                                    indices[2] + start_index,
-                                                    uvs[indices[2]].0,
-                                                    uvs[indices[2]].1,
-                                                    finished_collux.0,
-                                                    finished_collux.1,
-                                                    finished_collux.2
-                                                ),
-                                                self.voxel_types[voxel.voxel_id()].easy_texture() as u32, 
-                                                0
-                                            );
-                                            lod.triangles.add_triangle(
-                                                TrianglePoint::new(
-                                                    indices[3] + start_index,
-                                                    uvs[indices[3]].0,
-                                                    uvs[indices[3]].1,
-                                                    finished_collux.0,
-                                                    finished_collux.1,
-                                                    finished_collux.2
-                                                ),
-                                                TrianglePoint::new(
-                                                    indices[4] + start_index,
-                                                    uvs[indices[4]].0,
-                                                    uvs[indices[4]].1,
-                                                    finished_collux.0,
-                                                    finished_collux.1,
-                                                    finished_collux.2
-                                                ),
-                                                TrianglePoint::new(
-                                                    indices[5] + start_index,
-                                                    uvs[indices[5]].0,
-                                                    uvs[indices[5]].1,
-                                                    finished_collux.0,
-                                                    finished_collux.1,
-                                                    finished_collux.2
-                                                ),
-                                                self.voxel_types[voxel.voxel_id()].easy_texture() as u32, 
-                                                0
-                                            );
-                                        }
-                                    }
-                                }
-                                
-                            }
+                    let mut lods = Vec::new();
+                    if self.dims.chunk_height_i == self.dims.chunk_length_i && self.dims.chunk_length_i == self.dims.chunk_width_i && self.dims.chunk_height_i >= 8 {
+                        const STEPS:[i32 ; 4] = [1, 2, 4, 8];
+                        for step in STEPS {
+                            lods.push(MeshLODType::Mesh(Arc::new( self.get_lod_with_step(chunk, around, step))));
                         }
                     }
+                    else {
+                        lods.push(MeshLODType::Mesh(Arc::new( self.get_lod_without_step(chunk, around))));
+                    }
+                    lods.reverse();
                     
                     let size = self.dims.chunk_length_f*SQRT_2;
                     let height = self.dims.chunk_height_f;
                     let mut chunk = self.get_chunk_at_mut(pos).unwrap();
                     match chunk.mesh_id {
                         Some(id) => {
-                            render_data.meshes.set_mesh(&MeshID::Referenced(id), Mesh::new(MeshLODS::new(vec![MeshLODType::Mesh(Arc::new(lod))]), format!("Chunk {} {} {} {}", pos.x, pos.y, pos.z, mesh_vec), size));
+                            render_data.meshes.set_mesh(&MeshID::Referenced(id), Mesh::new(MeshLODS::new(lods), format!("Chunk {} {} {} {}", pos.x, pos.y, pos.z, mesh_vec), size));
                         },
                         None => {
                             /*let mut local_cool = false;
@@ -384,7 +303,7 @@ impl<'a, V:Voxel> Renderable<VectorinatorWrite<'a>> for GameMap<V> {
                                 test_chunk_tris = lod.triangles.len();
                                 local_cool = true;
                             }*/
-                            let id = render_data.meshes.add_mesh(Mesh::new(MeshLODS::new(vec![MeshLODType::Mesh(Arc::new(lod))]), format!("Chunk {} {} {} {}", pos.x, pos.y, pos.z, mesh_vec), size));
+                            let id = render_data.meshes.add_mesh(Mesh::new(MeshLODS::new(lods), format!("Chunk {} {} {} {}", pos.x, pos.y, pos.z, mesh_vec), size));
                             /*if local_cool {
                                 test_chunk_id = id;
                             }*/
@@ -609,6 +528,230 @@ pub fn get_chunk_pos_i(dims:&ChunkDims, pos:Vec3D<i32>) -> WorldChunkPos {
 impl<V:Voxel> GameMap<V> {
     pub fn new(expected_chunks:usize, dims:ChunkDims, voxel_types:Vec<V::VT>, min_light_levels:(u8,u8,u8), mesh_vec:usize) -> Self {
         Self { chunks: HashMap::with_capacity(expected_chunks), dims, voxel_types, forced_rerender:false, min_light_levels, mesh_vec, rendering_up_to_date: false, remesh_fasttrack:Vec::with_capacity(16), set_grid:SetGrid::new(5.0, Vec3D::all_ones() * -15, Vec3D::all_ones() * 15) }
+    }
+    fn get_lod_without_step(&self, chunk:&MapChunk<V>, around:[Option<&MapChunk<V>> ; 6]) -> MeshLOD {
+        let mut x = Vec::with_capacity(600);
+        let mut y = Vec::with_capacity(600);
+        let mut z = Vec::with_capacity(600);
+        let mut triangles = MeshTriangles::with_capacity(600);
+        let mut lod = MeshLOD::new(x, y, z, triangles);
+        for x in 0..self.dims.chunk_length_i {
+            for y in 0..self.dims.chunk_width_i {
+                for z in 0..self.dims.chunk_height_i {
+
+                    let voxel = chunk.get_at_local(Vec3D::new(x, y, z), &self.dims).unwrap();
+                    if !&self.voxel_types[voxel.voxel_id()].is_completely_empty() {
+                        let empty_dirs = chunk.get_empty_directions_local(Vec3D::new(x, y, z), &self.dims, around, &self.voxel_types);
+                        let lights = chunk.get_lights_local(Vec3D::new(x, y, z), &self.dims, around);
+                        //dbg!(Vec3D::new(x, y, z));
+                        for (i, mask) in DIR_MASK.iter().enumerate() {
+                            /*if empty_dirs != 0 {
+                                dbg!(empty_dirs);
+                            }*/
+                            if empty_dirs & mask  == *mask { //if a direction is empty (hint:it's a me, Mario)
+                                let mut points = TRIS_INDICES_UVS.0[i];
+                                let indices = TRIS_INDICES_UVS.1;
+                                let uvs = TRIS_INDICES_UVS.2;
+                                let start_index = lod.x.len();
+                                let mut level = (lights[i].level.max(50) as f32) / 255.0;
+                                let mut converted_collux = collux_u8_a_f32((lights[i].r, lights[i].g, lights[i].b));
+                                let mut finished_collux = collux_f32_a_u8((converted_collux.0 * level, converted_collux.1 * level, converted_collux.2 * level));
+                                finished_collux = (finished_collux.0.max(self.min_light_levels.0), finished_collux.1.max(self.min_light_levels.1), finished_collux.2.max(self.min_light_levels.2));
+                                points = points + Vec3D::new(x as f32, y as f32, z as f32); 
+                                lod.add_points(&points);
+                                lod.triangles.add_triangle(
+                                    TrianglePoint::new(
+                                        indices[0] + start_index,
+                                        uvs[indices[0]].0,
+                                        uvs[indices[0]].1,
+                                        finished_collux.0,
+                                        finished_collux.1,
+                                        finished_collux.2
+                                    ),
+                                    TrianglePoint::new(
+                                        indices[1] + start_index,
+                                        uvs[indices[1]].0,
+                                        uvs[indices[1]].1,
+                                        finished_collux.0,
+                                        finished_collux.1,
+                                        finished_collux.2
+                                    ),
+                                    TrianglePoint::new(
+                                        indices[2] + start_index,
+                                        uvs[indices[2]].0,
+                                        uvs[indices[2]].1,
+                                        finished_collux.0,
+                                        finished_collux.1,
+                                        finished_collux.2
+                                    ),
+                                    self.voxel_types[voxel.voxel_id()].easy_texture() as u32, 
+                                    0
+                                );
+                                lod.triangles.add_triangle(
+                                    TrianglePoint::new(
+                                        indices[3] + start_index,
+                                        uvs[indices[3]].0,
+                                        uvs[indices[3]].1,
+                                        finished_collux.0,
+                                        finished_collux.1,
+                                        finished_collux.2
+                                    ),
+                                    TrianglePoint::new(
+                                        indices[4] + start_index,
+                                        uvs[indices[4]].0,
+                                        uvs[indices[4]].1,
+                                        finished_collux.0,
+                                        finished_collux.1,
+                                        finished_collux.2
+                                    ),
+                                    TrianglePoint::new(
+                                        indices[5] + start_index,
+                                        uvs[indices[5]].0,
+                                        uvs[indices[5]].1,
+                                        finished_collux.0,
+                                        finished_collux.1,
+                                        finished_collux.2
+                                    ),
+                                    self.voxel_types[voxel.voxel_id()].easy_texture() as u32, 
+                                    0
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        lod
+    }
+    fn get_lod_with_step(&self, chunk:&MapChunk<V>, around:[Option<&MapChunk<V>> ; 6], step:i32) -> MeshLOD {
+        let mut x = Vec::with_capacity(600);
+        let mut y = Vec::with_capacity(600);
+        let mut z = Vec::with_capacity(600);
+        let mut triangles = MeshTriangles::with_capacity(600);
+        let mut lod = MeshLOD::new(x, y, z, triangles);
+        let scaler = Vec3D::new(step as f32, step as f32, step as f32);
+        for x in (0..self.dims.chunk_length_i).step_by(step as usize) {
+            for y in (0..self.dims.chunk_width_i).step_by(step as usize) {
+                for z in (0..self.dims.chunk_height_i).step_by(step as usize) {
+
+                    let voxel = chunk.get_at_local(Vec3D::new(x, y, z), &self.dims).unwrap();
+                    let lights = chunk.get_lights_local(Vec3D::new(x, y, z), &self.dims, around);
+
+                    for (i, mask) in DIR_MASK.iter().enumerate() {
+                        let mut any_voxel_needs_face = false;
+                        let mut any_voxel_full = false;
+                        let mut full_texture = 0;
+
+                        'outer : for dx in x..x+step {
+                            for dy in y..y+step {
+                                for dz in z..z+step {
+                                    let voxel = chunk.get_at_local(Vec3D::new(dx, dy, dz), &self.dims).unwrap();
+                                    if !&self.voxel_types[voxel.voxel_id()].is_completely_empty() {
+                                        full_texture = self.voxel_types[voxel.voxel_id()].easy_texture() as u32;
+                                        // assumes that all blocks with textures are full (currently all that's implemented anyway)
+                                        any_voxel_full = true;
+                                        break 'outer;
+                                    }
+                                    
+                                }
+                            }
+                        }
+                        if any_voxel_full {
+                            'outer : for dx in x..x+step {
+                                for dy in y..y+step {
+                                    for dz in z..z+step {
+                                        let voxel = chunk.get_at_local(Vec3D::new(dx, dy, dz), &self.dims).unwrap();
+                                        let empty_dirs = chunk.get_empty_directions_local(Vec3D::new(dx, dy, dz), &self.dims, around, &self.voxel_types);
+                                        if empty_dirs & mask  == *mask { //if a direction is empty (hint:it's a me, Mario)
+                                            any_voxel_needs_face = true;
+                                            break 'outer;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if any_voxel_needs_face {
+                            let mut points = TRIS_INDICES_UVS.0[i];
+                            let indices = TRIS_INDICES_UVS.1;
+                            let uvs = TRIS_INDICES_UVS.2;
+                            let start_index = lod.x.len();
+                            let mut level = (lights[i].level.max(50) as f32) / 255.0;
+                            let mut converted_collux = collux_u8_a_f32((lights[i].r, lights[i].g, lights[i].b));
+                            let mut finished_collux = collux_f32_a_u8((converted_collux.0 * level, converted_collux.1 * level, converted_collux.2 * level));
+                            finished_collux = (finished_collux.0.max(self.min_light_levels.0), finished_collux.1.max(self.min_light_levels.1), finished_collux.2.max(self.min_light_levels.2));
+                            if step == 1 {
+                                points = points + Vec3D::new(x as f32, y as f32, z as f32); 
+                            }
+                            else {
+                                // for step = 2
+                                // x = 0.5 2.5 4.5 6.5
+                                points = points * scaler + (Vec3D::new(x as f32, y as f32, z as f32)) + ((Vec3Df::all_ones() * 0.5).component_product(&scaler) - Vec3Df::all_ones() * 0.5);
+                            }
+                            lod.add_points(&points);
+                            lod.triangles.add_triangle(
+                                TrianglePoint::new(
+                                    indices[0] + start_index,
+                                    uvs[indices[0]].0,
+                                    uvs[indices[0]].1,
+                                    finished_collux.0,
+                                    finished_collux.1,
+                                    finished_collux.2
+                                ),
+                                TrianglePoint::new(
+                                    indices[1] + start_index,
+                                    uvs[indices[1]].0,
+                                    uvs[indices[1]].1,
+                                    finished_collux.0,
+                                    finished_collux.1,
+                                    finished_collux.2
+                                ),
+                                TrianglePoint::new(
+                                    indices[2] + start_index,
+                                    uvs[indices[2]].0,
+                                    uvs[indices[2]].1,
+                                    finished_collux.0,
+                                    finished_collux.1,
+                                    finished_collux.2
+                                ),
+                                full_texture, 
+                                0
+                            );
+                            lod.triangles.add_triangle(
+                                TrianglePoint::new(
+                                    indices[3] + start_index,
+                                    uvs[indices[3]].0,
+                                    uvs[indices[3]].1,
+                                    finished_collux.0,
+                                    finished_collux.1,
+                                    finished_collux.2
+                                ),
+                                TrianglePoint::new(
+                                    indices[4] + start_index,
+                                    uvs[indices[4]].0,
+                                    uvs[indices[4]].1,
+                                    finished_collux.0,
+                                    finished_collux.1,
+                                    finished_collux.2
+                                ),
+                                TrianglePoint::new(
+                                    indices[5] + start_index,
+                                    uvs[indices[5]].0,
+                                    uvs[indices[5]].1,
+                                    finished_collux.0,
+                                    finished_collux.1,
+                                    finished_collux.2
+                                ),
+                                full_texture, 
+                                0
+                            );
+                        }
+                        
+                    }
+                }
+            }
+        }
+        lod
     }
     pub fn does_chunk_exist(&self, chunk:WorldChunkPos) -> bool {
         self.chunks.contains_key(&chunk)
