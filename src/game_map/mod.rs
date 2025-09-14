@@ -630,6 +630,7 @@ impl<V:Voxel> GameMap<V> {
         let mut triangles = MeshTriangles::with_capacity(600);
         let mut lod = MeshLOD::new(x, y, z, triangles);
         let scaler = Vec3D::new(step as f32, step as f32, step as f32);
+        let float_step = step as f32;
         for x in (0..self.dims.chunk_length_i).step_by(step as usize) {
             for y in (0..self.dims.chunk_width_i).step_by(step as usize) {
                 for z in (0..self.dims.chunk_height_i).step_by(step as usize) {
@@ -692,24 +693,24 @@ impl<V:Voxel> GameMap<V> {
                             lod.triangles.add_triangle(
                                 TrianglePoint::new(
                                     indices[0] + start_index,
-                                    uvs[indices[0]].0,
-                                    uvs[indices[0]].1,
+                                    uvs[indices[0]].0 * float_step,
+                                    uvs[indices[0]].1 * float_step,
                                     finished_collux.0,
                                     finished_collux.1,
                                     finished_collux.2
                                 ),
                                 TrianglePoint::new(
                                     indices[1] + start_index,
-                                    uvs[indices[1]].0,
-                                    uvs[indices[1]].1,
+                                    uvs[indices[1]].0 * float_step,
+                                    uvs[indices[1]].1 * float_step,
                                     finished_collux.0,
                                     finished_collux.1,
                                     finished_collux.2
                                 ),
                                 TrianglePoint::new(
                                     indices[2] + start_index,
-                                    uvs[indices[2]].0,
-                                    uvs[indices[2]].1,
+                                    uvs[indices[2]].0 * float_step,
+                                    uvs[indices[2]].1 * float_step,
                                     finished_collux.0,
                                     finished_collux.1,
                                     finished_collux.2
@@ -720,24 +721,24 @@ impl<V:Voxel> GameMap<V> {
                             lod.triangles.add_triangle(
                                 TrianglePoint::new(
                                     indices[3] + start_index,
-                                    uvs[indices[3]].0,
-                                    uvs[indices[3]].1,
+                                    uvs[indices[3]].0 * float_step,
+                                    uvs[indices[3]].1 * float_step,
                                     finished_collux.0,
                                     finished_collux.1,
                                     finished_collux.2
                                 ),
                                 TrianglePoint::new(
                                     indices[4] + start_index,
-                                    uvs[indices[4]].0,
-                                    uvs[indices[4]].1,
+                                    uvs[indices[4]].0 * float_step,
+                                    uvs[indices[4]].1 * float_step,
                                     finished_collux.0,
                                     finished_collux.1,
                                     finished_collux.2
                                 ),
                                 TrianglePoint::new(
                                     indices[5] + start_index,
-                                    uvs[indices[5]].0,
-                                    uvs[indices[5]].1,
+                                    uvs[indices[5]].0 * float_step,
+                                    uvs[indices[5]].1 * float_step,
                                     finished_collux.0,
                                     finished_collux.1,
                                     finished_collux.2
