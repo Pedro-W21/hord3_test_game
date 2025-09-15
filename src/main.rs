@@ -41,7 +41,7 @@ fn main() {
     let mut world_height = 15.0;
     let mut water_level = 10.0;
     let start = Vec3D::new(-30, -20, -2);
-    let end = Vec3D::new(20, 20, 30);
+    let end = Vec3D::new(20, 20, 20);
 
     let mut ground_at = vec![0; ((end.x - start.x) * 8 * (end.y - start.y) * 8) as usize];
     let length_f64 = ((end.x - start.x) * 8 ) as f64;
