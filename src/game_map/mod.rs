@@ -299,12 +299,12 @@ impl<'a, V:Voxel> Renderable<VectorinatorWrite<'a>> for GameMap<V> {
                     }
                     lods.reverse();
                     
-                    let size = self.dims.chunk_length_f*SQRT_2 * 4.0;
+                    let size = self.dims.chunk_length_f*SQRT_2;
                     let height = self.dims.chunk_height_f;
                     let mut chunk = self.get_chunk_at_mut(pos).unwrap();
                     match chunk.mesh_id {
                         Some(id) => {
-                            render_data.meshes.set_mesh(&MeshID::Referenced(id), Mesh::new(MeshLODS::new(lods), format!("Chunk {} {} {} {}", pos.x, pos.y, pos.z, mesh_vec), size));
+                            render_data.meshes.set_mesh(&MeshID::Referenced(id), Mesh::new(MeshLODS::new(lods), format!("Chunk {} {} {} {}", pos.x, pos.y, pos.z, mesh_vec), size).with_lod_factor(0.025));
                         },
                         None => {
                             /*let mut local_cool = false;
@@ -312,7 +312,7 @@ impl<'a, V:Voxel> Renderable<VectorinatorWrite<'a>> for GameMap<V> {
                                 test_chunk_tris = lod.triangles.len();
                                 local_cool = true;
                             }*/
-                            let id = render_data.meshes.add_mesh(Mesh::new(MeshLODS::new(lods), format!("Chunk {} {} {} {}", pos.x, pos.y, pos.z, mesh_vec), size));
+                            let id = render_data.meshes.add_mesh(Mesh::new(MeshLODS::new(lods), format!("Chunk {} {} {} {}", pos.x, pos.y, pos.z, mesh_vec), size).with_lod_factor(0.025));
                             /*if local_cool {
                                 test_chunk_id = id;
                             }*/
