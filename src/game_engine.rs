@@ -77,20 +77,20 @@ impl CoolVoxel {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, FromBytes, ToBytes)]
 pub struct CoolVoxelType {
     pub empty_sides:u8,
     pub texture:usize,
     pub light_passthrough:VoxelLight,
     pub is_light_source:Option<VoxelLight>,
     pub name:String,
-    pub texture_path:Option<PathBuf>,
+    pub texture_path:Option<String>,
     pub base_extra_voxel_data:Option<ExtraVoxelData>
 }
 
 impl CoolVoxelType {
     pub fn new(empty_sides:u8, texture:usize, light_passthrough:VoxelLight, is_light_source:Option<VoxelLight>, name:String, texture_path:Option<PathBuf>, base_extra_voxel_data:Option<ExtraVoxelData>) -> Self {
-        Self { empty_sides, texture, light_passthrough, is_light_source, name, texture_path, base_extra_voxel_data }
+        Self { empty_sides, texture, light_passthrough, is_light_source, name, texture_path:texture_path.map(|path| {path.to_string_lossy().to_string()}), base_extra_voxel_data }
     }
 }
 

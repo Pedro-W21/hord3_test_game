@@ -531,7 +531,7 @@ impl TileEditorData {
     pub fn initial_ui_work(&mut self, textures:&Textures) {
         for voxel_type in get_tile_voxels() {
             match voxel_type.texture_path {
-                Some(path) => self.ui.add_image(path, Some(voxel_type.name)),
+                Some(path) => self.ui.add_image(PathBuf::from(path), Some(voxel_type.name)),
                 None => self.ui.add_image_from_id(textures, voxel_type.texture),
             }
         }

@@ -1,5 +1,5 @@
 use entity_derive::Entity;
-use hord3::{defaults::default_rendering::vectorinator_binned::{meshes::{Mesh, MeshID, MeshInstance}, VectorinatorWrite}, horde::{game_engine::{entity::{Component, ComponentEvent, EVecStopsIn, EVecStopsOut, Entity, EntityID, EntityVec, NewEntity, StaticComponent, StaticEntity}, multiplayer::Identify, position::EntityPosition, static_type_id::HasStaticTypeID}, geometry::{rotation::{Orientation, Rotation}, vec3d::Vec3Df}}};
+use hord3::{defaults::default_rendering::vectorinator_binned::{meshes::{Mesh, MeshID, MeshInstance}, VectorinatorWrite}, horde::{game_engine::{entity::{Component, ComponentEvent, EVecStopsIn, EVecStopsOut, Entity, EntityID, EntityVec, MultiplayerEntity, NewEntity, StaticComponent, StaticEntity}, multiplayer::Identify, position::EntityPosition, static_type_id::HasStaticTypeID}, geometry::{rotation::{Orientation, Rotation}, vec3d::Vec3Df}}};
 use to_from_bytes_derive::{FromBytes, ToBytes};
 
 use crate::game_entity::{actions::Actions, colliders::AABB, director::Director, planner::Planner};

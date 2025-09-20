@@ -135,3 +135,7 @@ blocs piège :
             - the main thread (or any tick-synchronized thread) has the Receiver<HordeProximaResponse>
                - each tick, receives and creates events filling the prompt vecs of the relevant entities
 
+
+# Multiplayer improvements :
+- the client controls a few IDs that he refuses resets and events for 
+- server sets tickrate, clients slow down when necessary
